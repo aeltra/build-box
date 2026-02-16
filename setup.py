@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Bondi OS build sandbox management utility"""
+"""Aeltra OS build sandbox management utility"""
 
 import os
 
@@ -13,13 +13,13 @@ VERSION = os.environ.get("BUILD_BOX_VERSION", "0.0.0")
 setup(
     name='build-box-utils',
     version=VERSION,
-    url='https://github.com/yaybondi/build-box-utils',
+    url='https://github.com/aeltra/build-box-utils',
     author='Tobias Koch',
     author_email='tobias.koch@gmail.com',
     license='MIT',
     packages=[
-        'yaybondi.buildbox',
-        'yaybondi.buildbox.misc',
+        'aeltra.buildbox',
+        'aeltra.buildbox.misc',
     ],
     package_dir={'': 'lib'},
     data_files=[
@@ -35,7 +35,7 @@ setup(
         'Programming Language :: Python :: 3'
     ],
 
-    keywords='Bondi OS cross-compile bootstrap',
-    description='Bondi OS build sandbox management utility',
-    long_description='Bondi OS build sandbox management utility',
+    keywords='Aeltra OS cross-compile bootstrap',
+    description='Aeltra OS build sandbox management utility',
+    long_description='Aeltra OS build sandbox management utility',
 )

@@ -26,9 +26,9 @@
 import os
 import textwrap
 
-from yaybondi.buildbox.misc.paths import Paths
-from yaybondi.osimage.generator import ImageGenerator
-from yaybondi.osimage.util import ImageGeneratorUtils
+from aeltra.buildbox.misc.paths import Paths
+from aeltra.osimage.generator import ImageGenerator
+from aeltra.osimage.util import ImageGeneratorUtils
 
 class BuildBoxGenerator(ImageGenerator):
 
@@ -73,7 +73,7 @@ class BuildBoxGenerator(ImageGenerator):
             f.write("option cache_dir /.pkg-cache\n")
 
         package_cache = os.path.join(
-            Paths.cache_dir(), "bondi", "pkg-cache", self._release, self._arch,
+            Paths.cache_dir(), "aeltra", "pkg-cache", self._release, self._arch,
                 self._libc
         )
 

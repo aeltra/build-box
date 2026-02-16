@@ -34,10 +34,10 @@ INSTALL_DIR = os.path.normpath(os.path.dirname(
     os.path.realpath(sys.argv[0])) + os.sep + ".." )
 sys.path.insert(1, INSTALL_DIR + os.sep + 'lib')
 
-from yaybondi.buildbox.cli import BuildBoxCLI
-from yaybondi.buildbox.error import BuildBoxError
-from yaybondi.error import BondiError
-from yaybondi.miscellaneous.logformatter import LogFormatter
+from aeltra.buildbox.cli import BuildBoxCLI
+from aeltra.buildbox.error import BuildBoxError
+from aeltra.error import AeltraError
+from aeltra.miscellaneous.logformatter import LogFormatter
 
 BUILD_BOX_ERR_INVOCATION = 1
 BUILD_BOX_ERR_RUNTIME    = 2
@@ -120,7 +120,7 @@ if __name__ == "__main__":
             LOGGER.error('unknown command "{}".'.format(command))
             sys.exit(BUILD_BOX_ERR_INVOCATION)
         #end if
-    except BondiError as e:
+    except AeltraError as e:
         LOGGER.error(e)
         sys.exit(BUILD_BOX_ERR_RUNTIME)
     except KeyboardInterrupt:

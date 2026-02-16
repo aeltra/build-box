@@ -23,9 +23,9 @@
 # THE SOFTWARE.
 #
 
-from yaybondi.distro.config.distroinfo import DistroInfo
-from yaybondi.distro.config.error import DistroInfoError
-from yaybondi.buildbox.error import BuildBoxError
+from aeltra.distro.config.distroinfo import DistroInfo
+from aeltra.distro.config.error import DistroInfoError
+from aeltra.buildbox.error import BuildBoxError
 
 class Distribution:
 

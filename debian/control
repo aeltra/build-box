@@ -12,14 +12,14 @@ Standards-Version: 3.9.8
 Package: build-box-ng
 Architecture: any
 Depends: ${python3:Depends}, ${shlibs:Depends}, ${misc:Depends},
- bondi-repo-keys,
+ aeltra-repo-keys,
  mount,
  opkg,
- python3-bondi-misc (>= 1.4.2),
- python3-bondi-distro-info (>= 1.4.2),
- python3-bondi-image-gen (>= 1.4.2),
+ python3-aeltra-misc (>= 1.4.2),
+ python3-aeltra-distro-info (>= 1.4.2),
+ python3-aeltra-image-gen (>= 1.4.2),
  qemu-user-binfmt,
  usign
-Description: management utility for Bondi OS build chroots
- BuildBox manages Bondi OS build chroots. It bootstraps chroots from packages
+Description: management utility for Aeltra OS build chroots
+ BuildBox manages Aeltra OS build chroots. It bootstraps chroots from packages
  and makes them accessible to unprivileged users.

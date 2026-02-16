@@ -52,7 +52,7 @@ void bbox_sanitize_environment()
 
     for(size_t i = 0; (start = environ[i]) != NULL; i++)
     {
-        if(!strncmp(start, "BONDI_", 5))
+        if(!strncmp(start, "AELTRA_", 7))
             continue;
         if(!strncmp(start, "DISPLAY=", 8))
             continue;

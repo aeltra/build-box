@@ -31,10 +31,10 @@ import shutil
 import signal
 import sys
 
-from yaybondi.buildbox.error import BuildBoxError
-from yaybondi.buildbox.generator import BuildBoxGenerator
-from yaybondi.buildbox.misc.paths import Paths
-from yaybondi.buildbox.sysroot import Sysroot
+from aeltra.buildbox.error import BuildBoxError
+from aeltra.buildbox.generator import BuildBoxGenerator
+from aeltra.buildbox.misc.paths import Paths
+from aeltra.buildbox.sysroot import Sysroot
 
 class BuildBoxTarget:
 

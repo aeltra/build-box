@@ -2,7 +2,7 @@
 #
 # The MIT License (MIT)
 #
-# Copyright (c) 2017 Tobias Koch <tobias.koch@gmail.com>
+# Copyright (c) 2019 Tobias Koch <tobias.koch@gmail.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,34 @@
 # THE SOFTWARE.
 #
 
-from yaybondi.error import BondiError
+import os
 
-class BuildBoxError(BondiError):
-    pass
+from aeltra.miscellaneous.userinfo import UserInfo
+from aeltra.buildbox.error import BuildBoxError
+
+class Paths:
+
+    @staticmethod
+    def homedir():
+        home = UserInfo.homedir()
+        if not home:
+            raise BuildBoxError("unable to determine user home directory.")
+        return home
+    #end function
+
+    @staticmethod
+    def cache_dir():
+        cache_dir = UserInfo.cache_dir()
+        if not cache_dir:
+            raise BuildBoxError("unable to determine cache directory.")
+        return cache_dir
+    #end function
+
+    @staticmethod
+    def target_prefix():
+        return os.path.join(
+            "/var/lib/build-box/users", "{}".format(os.getuid()), "targets"
+        )
+    #end function
+
+#end class

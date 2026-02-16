@@ -385,7 +385,7 @@ int bbox_run(int argc, char * const argv[])
 
     /*
      * We clean out most of the environment except for variables starting with
-     * BONDI_ and a few select, such as CFLAGS. Then we log into the target and
+     * AELTRA_ and a few select, such as CFLAGS. Then we log into the target and
      * execute what's left on the command line.
      */
     bbox_sanitize_environment();
