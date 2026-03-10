@@ -14,7 +14,7 @@ Architecture: any
 Depends: ${python3:Depends}, ${shlibs:Depends}, ${misc:Depends},
  aeltra-repo-keys,
  mount,
- opkg,
+ aept,
  python3-aeltra-misc (>= 1.4.2),
  python3-aeltra-distro-info (>= 1.4.2),
  python3-aeltra-image-gen (>= 1.4.2),

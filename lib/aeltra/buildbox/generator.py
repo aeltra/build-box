@@ -32,20 +32,19 @@ from aeltra.osimage.util import ImageGeneratorUtils
 
 class BuildBoxGenerator(ImageGenerator):
 
-    OPKG_FEEDS_TEMPLATE = textwrap.dedent(
+    AEPT_CONFIG_TEMPLATE = textwrap.dedent(
         """\
         src/gz main {repo_base}/{release}/core/{arch}/{libc}/main
         src/gz tools {repo_base}/{release}/core/{arch}/{libc}/tools/{host_arch}
         src/gz cross-tools {repo_base}/{release}/core/{arch}/{libc}/cross-tools/{host_arch}
-        """  # noqa
-    )
 
-    OPKG_ARCH_TEMPLATE = textwrap.dedent(
-        """\
-        arch {arch} 1
-        arch all 1
-        arch tools 1
-        """
+        arch {arch}
+        arch all
+        arch tools
+
+        option cache_dir /.pkg-cache
+        {opt_check_sig}
+        """  # noqa
     )
 
     ETC_TARGET_TEMPLATE = textwrap.dedent(
@@ -67,10 +66,6 @@ class BuildBoxGenerator(ImageGenerator):
                     target_id=target_id, **self.context
                 )
             )
-
-        opkg_cache_conf = os.path.join(sysroot, "etc", "opkg", "cache.conf")
-        with open(opkg_cache_conf, "w+", encoding="utf-8") as f:
-            f.write("option cache_dir /.pkg-cache\n")
 
         package_cache = os.path.join(
             Paths.cache_dir(), "aeltra", "pkg-cache", self._release, self._arch,

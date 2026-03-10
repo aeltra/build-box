@@ -863,7 +863,7 @@ int bbox_try_fix_pkg_cache_symlink(char *module) {
     size_t out_buf_len = 0;
 
     if(lstat("/.pkg-cache", &link_st) == -1) {
-        return symlink("/var/cache/opkg", "/.pkg-cache");
+        return symlink("/var/cache/aept", "/.pkg-cache");
     }
 
     size_t bufsize = link_st.st_size ? link_st.st_size + 1 : PATH_MAX;
