@@ -889,6 +889,7 @@ int bbox_mkdir_p(const char *module, const char *path)
         rval = -1;
     }
 
+    free(out_buf);
     return rval;
 }
 
@@ -900,7 +901,9 @@ int bbox_sysroot_mkdir_p(const char *module, const char *sys_root,
 
     bbox_path_join(&buf, sys_root, path, &buf_len);
 
-    return bbox_mkdir_p(module, buf);
+    int rval = bbox_mkdir_p(module, buf);
+    free(buf);
+    return rval;
 }
 
 int bbox_is_subdir_of(const char *path, const char *subdir) 
