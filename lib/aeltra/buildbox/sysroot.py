@@ -24,6 +24,7 @@
 #
 
 import logging
+import os
 import subprocess
 import sys
 
@@ -38,7 +39,9 @@ class Sysroot(BaseSysroot):
         super().__init__(sysroot)
 
     def __enter__(self):
-        cmd = [sys.argv[0], "mount", "-t", self.sysroot, "."]
+        target_dir = os.path.dirname(self.sysroot)
+        target_name = os.path.basename(self.sysroot)
+        cmd = [sys.argv[0], "mount", "-t", target_dir, target_name]
         for mountpoint in self.MOUNTPOINTS:
             cmd.insert(2, "-m")
             cmd.insert(3, mountpoint)
@@ -57,7 +60,11 @@ class Sysroot(BaseSysroot):
     #end function
 
     def umount_all(self):
-        proc = subprocess.run([sys.argv[0], "umount", "-t", self.sysroot, "."])
+        target_dir = os.path.dirname(self.sysroot)
+        target_name = os.path.basename(self.sysroot)
+        proc = subprocess.run(
+            [sys.argv[0], "umount", "-t", target_dir, target_name]
+        )
         if proc.returncode != 0:
             raise BuildBoxError("failed to release bind mounts.")
     #end function
