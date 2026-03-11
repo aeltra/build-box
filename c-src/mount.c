@@ -258,7 +258,7 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
                 filesystemtype, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -329,7 +329,7 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
                 source, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -342,7 +342,7 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
      * only way to add restrictions like MS_NOSUID or MS_NOEXEC.
      */
     if(rval == 0 && remount_flags) {
-        if(mount(NULL, fd_path, NULL,
+        if(mount(NULL, target, NULL,
                     MS_BIND | MS_REMOUNT | remount_flags, NULL) != 0)
         {
             bbox_perror("mount",

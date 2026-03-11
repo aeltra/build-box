@@ -191,15 +191,21 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
         return 0;
     }
 
+    /*
+     * Close the fd before unmounting. An open fd to the mount point counts
+     * as an active reference and would cause umount() to fail with EBUSY.
+     * The real_path obtained via the fd is still valid for the umount call.
+     */
+    close(target_fd);
+
     int rval = 0;
 
     if(bbox_raise_privileges() == -1) {
-        close(target_fd);
         free(buf);
         return -1;
     }
 
-    if(umount(fd_path) != 0) {
+    if(umount(real_path) != 0) {
         bbox_perror("umount", "failed to unmount %s: %s\n", buf,
                 strerror(errno));
         rval = -1;
@@ -208,7 +214,6 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
-    close(target_fd);
     free(buf);
     return rval;
 }
