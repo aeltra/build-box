@@ -26,6 +26,7 @@
 #include <stdio.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
 #include <mntent.h>
@@ -130,6 +131,8 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
 {
     char *buf = NULL;
     size_t buf_len = 0;
+    char fd_path[64];
+    int target_fd = -1;
     struct stat st;
     int is_mounted = 0;
 
@@ -171,14 +174,30 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
         return -1;
     }
 
-    int rval = 0;
-
-    if(bbox_raise_privileges() == -1) {
+    /*
+     * Pin the directory with an fd so we can umount via /proc/self/fd,
+     * eliminating the TOCTOU race between the checks above and the
+     * privileged umount call.
+     */
+    target_fd = open(buf, O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC);
+    if(target_fd == -1) {
+        bbox_perror("umount", "could not open '%s': %s.\n", buf,
+                strerror(errno));
         free(buf);
         return -1;
     }
 
-    if(umount(buf) != 0) {
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", target_fd);
+
+    int rval = 0;
+
+    if(bbox_raise_privileges() == -1) {
+        close(target_fd);
+        free(buf);
+        return -1;
+    }
+
+    if(umount(fd_path) != 0) {
         bbox_perror("umount", "failed to unmount %s: %s\n", buf,
                 strerror(errno));
         rval = -1;
@@ -187,6 +206,7 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
+    close(target_fd);
     free(buf);
     return rval;
 }

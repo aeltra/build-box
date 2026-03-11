@@ -201,6 +201,8 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     char *mount_point = NULL;
     char *target = NULL;
     size_t buf_len = 0;
+    char fd_path[64];
+    int target_fd = -1;
 
     int is_mounted = 0;
 
@@ -227,32 +229,36 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     }
 
     /*
-     * Require that the normalized mountpoint is a directory owned by the user
-     * who invoked `build-box` to mitigate the risk of misuse.
+     * Open the mountpoint directory and verify ownership via the fd. Using
+     * the fd (through /proc/self/fd) for the mount operation eliminates the
+     * TOCTOU race between the ownership check and the privileged mount call.
      */
-    if(bbox_isdir_and_owned_by("mount", target, getuid()) == -1) {
+    if((target_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
         free(target);
         return -1;
     }
+
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", target_fd);
 
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
     if(bbox_raise_privileges() == -1) {
+        close(target_fd);
         free(target);
         return -1;
     }
 
     int rval = 0;
 
-    if(mount(NULL, target, filesystemtype, 0, NULL) != 0)
+    if(mount(NULL, fd_path, filesystemtype, 0, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -265,6 +271,7 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
+    close(target_fd);
     free(target);
     return rval;
 }
@@ -273,6 +280,8 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
 {
     char *target = NULL;
     size_t buf_len = 0;
+    char fd_path[64];
+    int target_fd = -1;
     int is_mounted = 0;
 
     bbox_path_join(&target, sys_root, source, &buf_len);
@@ -288,19 +297,23 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
     }
 
     /*
-     * Require that the normalized mountpoint is a directory owned by the user
-     * who invoked `build-box` to mitigate the risk of misuse.
+     * Open the mountpoint directory and verify ownership via the fd. Using
+     * the fd (through /proc/self/fd) for the mount operation eliminates the
+     * TOCTOU race between the ownership check and the privileged mount call.
      */
-    if(bbox_isdir_and_owned_by("mount", target, getuid()) == -1) {
+    if((target_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
         free(target);
         return -1;
     }
+
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", target_fd);
 
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
     if(bbox_raise_privileges() == -1) {
+        close(target_fd);
         free(target);
         return -1;
     }
@@ -309,13 +322,13 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
 
     unsigned long mountflags = MS_BIND | (recursive ? MS_REC : 0);
 
-    if(mount(source, target, NULL, mountflags, NULL) != 0)
+    if(mount(source, fd_path, NULL, mountflags, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 source, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -328,6 +341,7 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
+    close(target_fd);
     free(target);
     return rval;
 }
