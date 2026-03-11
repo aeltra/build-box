@@ -406,7 +406,7 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         /*
          * This internally checks the ownership of <sys_root>/<homedir>.
          */
-        if(bbox_mount_bind(sys_root, homedir, 0, 0) < 0)
+        if(bbox_mount_bind(sys_root, homedir, 0, MS_NOSUID | MS_NODEV) < 0)
             return -1;
     }
 
