@@ -609,7 +609,7 @@ int bbox_lower_privileges()
 
 int bbox_raise_privileges()
 {
-    if(setuid(0) == -1) {
+    if(seteuid(0) == -1) {
         bbox_perror("bbox_raise_privileges",
                 "failed to restore root privileges: %s.\n",
                     strerror(errno));
