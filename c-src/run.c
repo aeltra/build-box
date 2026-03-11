@@ -158,8 +158,6 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     static char *shells[] = {"/tools/bin/sh", "/usr/bin/sh", NULL};
 
     char *sh = NULL;
-    char *buf = NULL;
-    size_t buf_len = 0;
     struct stat st;
     pid_t pid = 0;
 
@@ -317,20 +315,39 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         return BBOX_ERR_RUNTIME;
     }
 
-    /* prepare the command line. */
-    if(argc > 1) {
-        for(size_t i = 0; i < argc; i++) {
-            if(i > 0)
-                bbox_sep_join(&buf, buf, " ", argv[i], &buf_len);
-            else
-                bbox_sep_join(&buf, "", "", argv[i], &buf_len);
-        }
+    /*
+     * Single argument: pass directly to sh -c, allowing shell syntax
+     * (pipes, redirections, etc.) to be interpreted by the shell.
+     *
+     * Multiple arguments: use "$@" to preserve argument boundaries.
+     * Without this, arguments containing spaces would be split incorrectly
+     * when the shell re-parses the command string.
+     */
+    if(argc == 1) {
+        char *command[] = {"sh", "-l", "-c", "--", argv[0], NULL};
+        execvp(sh, command);
     } else {
-        buf = argv[0];
-    }
+        char **command = malloc(sizeof(char*) * (argc + 7));
 
-    char *command[6] = {"sh", "-l", "-c", "--", buf, NULL};
-    execvp(sh, command);
+        if(!command) {
+            bbox_perror("bbox_runas_user_chrooted", "out of memory?\n");
+            _exit(BBOX_ERR_RUNTIME);
+        }
+
+        command[0] = "sh";
+        command[1] = "-l";
+        command[2] = "-c";
+        command[3] = "--";
+        command[4] = "\"$@\"";
+        command[5] = "sh";
+
+        for(int i = 0; i < argc; i++)
+            command[6 + i] = argv[i];
+        command[6 + argc] = NULL;
+
+        execvp(sh, command);
+        free(command);
+    }
 
     bbox_perror("bbox_runas_user_chrooted", "failed to invoke shell: %s\n",
             strerror(errno));
