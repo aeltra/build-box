@@ -942,6 +942,14 @@ int validate_target_name(const char *module, const char *target_name)
     if(len == 0)
         return -1;
 
+    if(strcmp(target_name, ".") == 0 || strcmp(target_name, "..") == 0) {
+        bbox_perror(
+            module,
+            "a target name must not be '.' or '..'.\n"
+        );
+        return -1;
+    }
+
     for(size_t i = 0; i < len; i++) {
         int ch = target_name[i];
 

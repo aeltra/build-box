@@ -261,6 +261,10 @@ class BuildBoxTarget:
 
     @classmethod
     def _target_name_valid_or_raise(cls, target_name):
+        if target_name in (".", ".."):
+            raise BuildBoxError(
+                "a target name must not be '.' or '..'."
+            )
         if not re.match(r"^[-_a-zA-Z0-9.]+$", target_name):
             raise BuildBoxError(
                 "a target name must consist of characters "
