@@ -329,13 +329,16 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     if(bbox_raise_privileges() == -1)
         return -1;
 
-    if(bbox_reset_supplementary_groups() == -1)
+    if(bbox_reset_supplementary_groups() == -1) {
+        bbox_lower_privileges();
         return -1;
+    }
 
     if(chroot(".") == -1) {
         bbox_perror("bbox_login_sh_chrooted",
                 "chroot to system root failed: %s.\n",
                 strerror(errno));
+        bbox_lower_privileges();
         return -1;
     }
 
@@ -650,6 +653,13 @@ int bbox_drop_privileges()
         return -1;
     }
 
+    if(setgid(getgid()) == -1) {
+        bbox_perror("bbox_drop_privileges",
+                "could not drop group privileges: %s.\n",
+                    strerror(errno));
+        return -1;
+    }
+
     if(setuid(uid) == -1) {
         bbox_perror("bbox_drop_privileges",
                 "could not drop privileges: %s.\n",
@@ -774,43 +784,17 @@ cleanup_and_exit:
 
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid)
 {
-    struct stat st;
-
     /*
-     * It seems important to stat the normalized path to avoid any symlink
-     * trickery. Hopefully, that is enough.
+     * Delegate to bbox_open_dir_owned_by which pins the directory with an
+     * fd before checking ownership, eliminating the TOCTOU race between
+     * path resolution and the ownership check.
      */
-    char *normalized = realpath(dir, NULL);
+    int fd = bbox_open_dir_owned_by(module, dir, uid);
 
-    if(!normalized) {
-        bbox_perror(
-            module, "unable to normalize path '%s': %s.\n",
-            dir,
-            strerror(errno)
-        );
+    if(fd == -1)
         return -1;
-    }
 
-    if(lstat(normalized, &st) == -1) {
-        bbox_perror(
-            module, "could not stat '%s': %s.\n", dir, strerror(errno)
-        );
-        free(normalized);
-        return -1;
-    }
-    if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
-        bbox_perror(module, "%s is not a directory.\n", dir);
-        free(normalized);
-        return -1;
-    }
-    if(st.st_uid != uid) {
-        bbox_perror(module, "directory '%s' is not owned by user id '%ld'.\n",
-                dir, (long) uid);
-        free(normalized);
-        return -1;
-    }
-
-    free(normalized);
+    close(fd);
     return 0;
 }
 

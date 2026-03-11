@@ -276,7 +276,8 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     return rval;
 }
 
-int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
+int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
+        unsigned long remount_flags)
 {
     char *target = NULL;
     size_t buf_len = 0;
@@ -336,6 +337,22 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive)
     }
 
     /*
+     * If additional mount flags were requested, apply them via a remount.
+     * Bind mounts inherit the source mount's flags, so a remount is the
+     * only way to add restrictions like MS_NOSUID or MS_NOEXEC.
+     */
+    if(rval == 0 && remount_flags) {
+        if(mount(NULL, fd_path, NULL,
+                    MS_BIND | MS_REMOUNT | remount_flags, NULL) != 0)
+        {
+            bbox_perror("mount",
+                    "failed to remount %s with restricted flags: %s.\n",
+                    target, strerror(errno));
+            /* Continue anyway. */
+        }
+    }
+
+    /*
      * We're done with mounting, lower privileges right away.
      */
     if(bbox_lower_privileges() == -1)
@@ -356,7 +373,7 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         return -1;
 
     if(bbox_config_get_mount_dev(conf)) {
-        if(bbox_mount_bind(sys_root, "/dev", 0) < 0)
+        if(bbox_mount_bind(sys_root, "/dev", 0, MS_NOSUID | MS_NOEXEC) < 0)
             return -1;
     }
 
@@ -389,7 +406,7 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         /*
          * This internally checks the ownership of <sys_root>/<homedir>.
          */
-        if(bbox_mount_bind(sys_root, homedir, 0) < 0)
+        if(bbox_mount_bind(sys_root, homedir, 0, 0) < 0)
             return -1;
     }
 
