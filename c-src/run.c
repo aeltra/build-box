@@ -191,6 +191,9 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     if(bbox_raise_privileges() == -1)
         return BBOX_ERR_RUNTIME;
 
+    if(bbox_reset_supplementary_groups() == -1)
+        return BBOX_ERR_RUNTIME;
+
     /* now do actual chroot call. */
     if(chroot(".") == -1) {
         bbox_perror("bbox_runas_user_chrooted",

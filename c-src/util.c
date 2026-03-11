@@ -320,6 +320,9 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     if(bbox_raise_privileges() == -1)
         return -1;
 
+    if(bbox_reset_supplementary_groups() == -1)
+        return -1;
+
     if(chroot(".") == -1) {
         bbox_perror("bbox_login_sh_chrooted",
                 "chroot to system root failed: %s.\n",
@@ -642,6 +645,20 @@ int bbox_drop_privileges()
         bbox_perror("bbox_drop_privileges",
                 "could not drop privileges: %s.\n",
                     strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+int bbox_reset_supplementary_groups()
+{
+    gid_t gid = getgid();
+
+    if(setgroups(1, &gid) == -1) {
+        bbox_perror("bbox_reset_supplementary_groups",
+                "failed to reset supplementary groups: %s.\n",
+                strerror(errno));
         return -1;
     }
 

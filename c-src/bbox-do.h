@@ -82,6 +82,7 @@ void bbox_sanitize_environment();
 int bbox_lower_privileges();
 int bbox_raise_privileges();
 int bbox_drop_privileges();
+int bbox_reset_supplementary_groups();
 
 int bbox_check_user_in_group_build_box();
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid);
