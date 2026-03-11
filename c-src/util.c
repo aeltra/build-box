@@ -246,7 +246,7 @@ void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
     if(base == *buf_ptr)
         base_is_buffer = 1;
 
-    if(base[base_len-1] != '/')
+    if(base_len == 0 || base[base_len-1] != '/')
         req_buf_size++;
 
     if(req_buf_size > *n_ptr)
@@ -266,7 +266,7 @@ void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
 
     memmove((void*) *buf_ptr, base, base_len + 1);
 
-    if(base[base_len-1] != '/')
+    if(base_len == 0 || base[base_len-1] != '/')
         (*buf_ptr)[base_len++] = '/';
 
     while(sub[0] == '/') {
