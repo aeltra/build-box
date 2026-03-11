@@ -26,7 +26,6 @@
 #include <stdio.h>
 
 #include <errno.h>
-#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
 #include <mntent.h>
@@ -131,72 +130,41 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
 {
     char *buf = NULL;
     size_t buf_len = 0;
-    char fd_path[64];
-    char real_path[PATH_MAX];
-    int target_fd = -1;
+    struct stat st;
     int is_mounted = 0;
 
     bbox_path_join(&buf, sys_root, mount_point, &buf_len);
 
-    /*
-     * Pin the directory with an fd. O_NOFOLLOW | O_DIRECTORY ensure we open
-     * an actual directory (not a symlink). All subsequent checks and the
-     * umount itself operate on this fd, eliminating TOCTOU races.
-     */
-    target_fd = open(buf, O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC);
-
-    if(target_fd == -1) {
+    if(lstat(buf, &st) == -1) {
         if(errno == ENOENT) {
             free(buf);
             return 0;
         }
-        bbox_perror("umount", "could not open '%s': %s.\n", buf,
+        bbox_perror("umount", "could not stat '%s': %s.\n", buf,
                 strerror(errno));
         free(buf);
         return -1;
     }
 
-    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", target_fd);
-
-    /*
-     * Read the real path from the fd and verify it is a subdirectory of
-     * sys_root. Since both the check and the umount use the same pinned
-     * fd, the path cannot be swapped between check and use.
-     */
-    ssize_t len = readlink(fd_path, real_path, sizeof(real_path) - 1);
-
-    if(len == -1) {
-        bbox_perror("umount", "could not resolve '%s': %s.\n", buf,
-                strerror(errno));
-        close(target_fd);
+    if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
+        bbox_perror("umount", "%s is not a directory.\n", buf);
         free(buf);
         return -1;
     }
 
-    real_path[len] = '\0';
-
-    if(bbox_is_subdir_of(sys_root, real_path) != 0) {
+    if(bbox_is_subdir_of(sys_root, buf) != 0) {
         bbox_perror("umount", "%s is not a subdirectory of %s.\n",
                 buf, sys_root);
-        close(target_fd);
         free(buf);
         return -1;
     }
 
-    is_mounted = bbox_mount_is_mounted(real_path);
+    is_mounted = bbox_mount_is_mounted(buf);
 
     if(is_mounted <= 0) {
-        close(target_fd);
         free(buf);
         return 0;
     }
-
-    /*
-     * Close the fd before unmounting. An open fd to the mount point counts
-     * as an active reference and would cause umount() to fail with EBUSY.
-     * The real_path obtained via the fd is still valid for the umount call.
-     */
-    close(target_fd);
 
     int rval = 0;
 
@@ -205,7 +173,7 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
         return -1;
     }
 
-    if(umount(real_path) != 0) {
+    if(umount(buf) != 0) {
         bbox_perror("umount", "failed to unmount %s: %s\n", buf,
                 strerror(errno));
         rval = -1;

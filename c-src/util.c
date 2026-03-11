@@ -784,73 +784,39 @@ cleanup_and_exit:
 
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid)
 {
-    /*
-     * Delegate to bbox_open_dir_owned_by which pins the directory with an
-     * fd before checking ownership, eliminating the TOCTOU race between
-     * path resolution and the ownership check.
-     */
-    int fd = bbox_open_dir_owned_by(module, dir, uid);
-
-    if(fd == -1)
-        return -1;
-
-    close(fd);
-    return 0;
-}
-
-int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
-{
     struct stat st;
 
-    /*
-     * Normalize the path, then open with O_NOFOLLOW | O_DIRECTORY to get an
-     * fd pinned to the actual directory inode. This fd can be used via
-     * /proc/self/fd/<N> for subsequent privileged operations (e.g. mount),
-     * eliminating TOCTOU races between the ownership check and the operation.
-     */
     char *normalized = realpath(dir, NULL);
 
     if(!normalized) {
         bbox_perror(
             module, "unable to normalize path '%s': %s.\n",
-            dir,
-            strerror(errno)
+            dir, strerror(errno)
         );
         return -1;
     }
 
-    int fd = open(normalized, O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC);
-
-    if(fd == -1) {
+    if(lstat(normalized, &st) == -1) {
         bbox_perror(
-            module, "could not open '%s': %s.\n", dir, strerror(errno)
+            module, "could not stat '%s': %s.\n", dir, strerror(errno)
         );
         free(normalized);
         return -1;
     }
-
-    free(normalized);
-
-    if(fstat(fd, &st) == -1) {
-        bbox_perror(
-            module, "could not stat '%s': %s.\n", dir, strerror(errno)
-        );
-        close(fd);
-        return -1;
-    }
-    if(!S_ISDIR(st.st_mode)) {
+    if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
         bbox_perror(module, "%s is not a directory.\n", dir);
-        close(fd);
+        free(normalized);
         return -1;
     }
     if(st.st_uid != uid) {
         bbox_perror(module, "directory '%s' is not owned by user id '%ld'.\n",
                 dir, (long) uid);
-        close(fd);
+        free(normalized);
         return -1;
     }
 
-    return fd;
+    free(normalized);
+    return 0;
 }
 
 int bbox_mkdir_p(const char *module, const char *path)
