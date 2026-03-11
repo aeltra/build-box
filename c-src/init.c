@@ -112,6 +112,7 @@ success:
     return 0;
 
 failure:
+    bbox_lower_privileges();
     free(user_dir);
     return -1;
 }

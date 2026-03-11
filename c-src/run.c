@@ -161,6 +161,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     char *buf = NULL;
     size_t buf_len = 0;
     struct stat st;
+    pid_t pid = 0;
 
     if(argc == 0) {
         bbox_perror("bbox_runas_user_chrooted",
@@ -191,19 +192,109 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     if(bbox_raise_privileges() == -1)
         return BBOX_ERR_RUNTIME;
 
-    if(bbox_reset_supplementary_groups() == -1)
+    if(bbox_reset_supplementary_groups() == -1) {
+        bbox_lower_privileges();
         return BBOX_ERR_RUNTIME;
+    }
 
     /* now do actual chroot call. */
     if(chroot(".") == -1) {
         bbox_perror("bbox_runas_user_chrooted",
                 "chroot to system root failed: %s.\n",
                 strerror(errno));
+        bbox_lower_privileges();
         return BBOX_ERR_RUNTIME;
     }
 
-    if(bbox_lower_privileges() == -1)
+    /*
+     * If isolation is requested, set up namespaces and fork while we still
+     * have root privileges.
+     */
+    if(bbox_config_get_isolation(conf)) {
+        /*
+         * Moving the process into its own PID namespace means, that this
+         * process group cannot interfere with other processes running under
+         * the same account.
+         *
+         * Putting it into its own mount namespace so that it gets a limited
+         * view of the proc filesystem (mounted below).
+         */
+        if(unshare(CLONE_NEWPID | CLONE_NEWNS) == -1) {
+            bbox_perror("bbox_runas_user_chrooted",
+                    "failed to isolate process: %s\n", strerror(errno));
+            bbox_lower_privileges();
+            return BBOX_ERR_RUNTIME;
+        }
+
+        /* Note that we only fork and wait when isolation is requested. */
+        if((pid = fork()) == -1) {
+            bbox_perror("bbox_runas_user_chrooted", "fork failed: %s\n",
+                    strerror(errno));
+            bbox_lower_privileges();
+            return BBOX_ERR_RUNTIME;
+        }
+
+        if(pid == 0 && bbox_config_get_mount_proc(conf)) {
+            if(mount(NULL, "/proc", "proc", 0, NULL) != 0) {
+                bbox_perror("bbox_runas_user_chrooted",
+                        "failed to mount /proc inside namespace: %s\n",
+                        strerror(errno));
+                _exit(BBOX_ERR_RUNTIME);
+            }
+        }
+    }
+
+    /*
+     * Permanently drop all privileges. After this point, root privileges
+     * cannot be recovered by any code path.
+     */
+    if(bbox_drop_privileges() == -1) {
+        bbox_perror("bbox_runas_user_chrooted",
+                "failed to permanently drop privileges.\n");
+        if(pid > 0) {
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            return BBOX_ERR_RUNTIME;
+        }
+        _exit(BBOX_ERR_RUNTIME);
+    }
+
+    /*
+     * Parent process in isolated mode: wait for the child and exit.
+     */
+    if(pid > 0) {
+        pid_one = pid;
+
+        int signals_to_handle[] = {SIGTERM, SIGINT, SIGHUP, 0};
+
+        for(int i = 0; signals_to_handle[i] != 0; i++) {
+            signal(signals_to_handle[i], signal_handler);
+        }
+
+        int wstatus = 0;
+
+        /* If we were interrupted, we try again. */
+        while(waitpid(pid, &wstatus, 0) == -1) {
+            /*
+             * This is really the only error that can occur. ECHILD cannot,
+             * because we forked the child ourselves. And EINVAL because we
+             * don't pass any flags to waitpid.
+             */
+            if(errno != EINTR)
+                break;
+        }
+
+        /* Pass through the exit status, if that is possible. */
+        if(WIFEXITED(wstatus))
+            return WEXITSTATUS(wstatus);
+
         return BBOX_ERR_RUNTIME;
+    }
+
+    /*
+     * Execution path: main process (non-isolated) or child (isolated).
+     * All code below runs permanently unprivileged.
+     */
 
     /* Do this while we're at the fs root. */
     bbox_try_fix_pkg_cache_symlink("");
@@ -238,96 +329,12 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         buf = argv[0];
     }
 
-    pid_t pid = 0;
+    char *command[6] = {"sh", "-l", "-c", "--", buf, NULL};
+    execvp(sh, command);
 
-    if(bbox_config_get_isolation(conf)) {
-        if(bbox_raise_privileges() == -1)
-            return BBOX_ERR_RUNTIME;
-
-        /*
-         * Moving the process into its own PID namespace means, that this
-         * process group cannot interfere with other processes running under
-         * the same account.
-         *
-         * Putting it into its own mount namespace so that it gets a limited
-         * view of the proc filesystem (mounted below).
-         */
-        if(unshare(CLONE_NEWPID | CLONE_NEWNS) == -1) {
-            bbox_perror("bbox_runas_user_chrooted",
-                    "failed to isolate process: %s\n", strerror(errno));
-            bbox_lower_privileges();
-            return BBOX_ERR_RUNTIME;
-        }
-
-        /* Note that we only fork and wait when isolation is requested. */
-        if((pid = fork()) == -1) {
-            bbox_perror("bbox_runas_user_chrooted", "fork failed: %s\n",
-                    strerror(errno));
-            bbox_lower_privileges();
-            return BBOX_ERR_RUNTIME;
-        }
-
-        if(pid == 0 && bbox_config_get_mount_proc(conf)) {
-            if(mount(NULL, "/proc", "proc", 0, NULL) != 0) {
-                bbox_perror("bbox_runas_user_chrooted",
-                        "failed to mount /proc inside namespace: %s\n",
-                        strerror(errno));
-                _exit(BBOX_ERR_RUNTIME);
-            }
-        }
-    }
-
-    /* Drop privileges in both parent and child (if there is a child). */
-    int drop_priv_result = bbox_drop_privileges();
-
-    /* Here pid is 0 if we didn't fork or if we forked and are the child. */
-    if(pid == 0) {
-        if(drop_priv_result == -1) {
-            bbox_perror("bbox_runas_user_chrooted",
-                    "failed to drop privileges in confined child: %s\n",
-                    strerror(errno));
-            _exit(BBOX_ERR_RUNTIME);
-        }
-
-        char *command[6] = {"sh", "-l", "-c", "--", buf, NULL};
-        execvp(sh, command);
-
-        bbox_perror("bbox_runas_user_chrooted", "failed to invoke shell: %s\n",
-                strerror(errno));
-        _exit(BBOX_ERR_RUNTIME);
-    }
-
-    /*
-     * We only get here if --isolate was set and we forked above. Otherwise,
-     * the execvp above will already have replaced the process.
-     */
-
-    pid_one = pid;
-
-    int signals_to_handle[] = {SIGTERM, SIGINT, SIGHUP, 0};
-
-    for(int i = 0; signals_to_handle[i] != 0; i++) {
-        signal(signals_to_handle[i], signal_handler);
-    }
-
-    int wstatus = 0;
-
-    /* If we were interrupted, we try again. */
-    while(waitpid(pid, &wstatus, 0) == -1) {
-        /*
-         * This is really the only error that can occur. ECHILD cannot, because
-         * we forked the child ourselves. And EINVAL because we don't pass any
-         * flags to waitpid.
-         */
-        if(errno != EINTR)
-            break;
-    }
-
-    /* Pass through the exit status, if that is possible. */
-    if(WIFEXITED(wstatus))
-        return WEXITSTATUS(wstatus);
-
-    return BBOX_ERR_RUNTIME;
+    bbox_perror("bbox_runas_user_chrooted", "failed to invoke shell: %s\n",
+            strerror(errno));
+    _exit(BBOX_ERR_RUNTIME);
 }
 
 int bbox_run(int argc, char * const argv[])
