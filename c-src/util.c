@@ -51,36 +51,37 @@ extern char **environ;
 void bbox_sanitize_environment()
 {
     char *start, *end, *name;
+    size_t i = 0;
 
-    for(size_t i = 0; (start = environ[i]) != NULL; i++)
+    while((start = environ[i]) != NULL)
     {
         if(!strncmp(start, "AELTRA_", 7))
-            continue;
+            goto next;
         if(!strncmp(start, "DISPLAY=", 8))
-            continue;
+            goto next;
         if(!strncmp(start, "SSH_CONNECTION=", 15))
-            continue;
+            goto next;
         if(!strncmp(start, "SSH_CLIENT=", 11))
-            continue;
+            goto next;
         if(!strncmp(start, "SSH_TTY=", 8))
-            continue;
+            goto next;
         if(!strncmp(start, "USER=", 5))
-            continue;
+            goto next;
         if(!strncmp(start, "TERM=", 5))
-            continue;
+            goto next;
         if(!strncmp(start, "HOME=", 5))
-            continue;
+            goto next;
         if(!strncmp(start, "CFLAGS=", 7))
-            continue;
+            goto next;
         if(!strncmp(start, "CXXFLAGS=", 9))
-            continue;
+            goto next;
         if(!strncmp(start, "CPPFLAGS=", 9))
-            continue;
+            goto next;
         if(!strncmp(start, "LDFLAGS=", 8))
-            continue;
+            goto next;
 
         if((end = strchr(start, '=')) == NULL)
-            continue;
+            goto next;
 
         name = strndup(start, end - start);
 
@@ -91,7 +92,13 @@ void bbox_sanitize_environment()
 
         unsetenv(name);
         free(name);
+
+        /* After unsetenv, environ shifts down. Restart from the beginning. */
         i = 0;
+        continue;
+
+    next:
+        i++;
     }
 }
 
