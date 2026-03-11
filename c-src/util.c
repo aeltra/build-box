@@ -621,7 +621,24 @@ int bbox_raise_privileges()
 
 int bbox_drop_privileges()
 {
-    if(setuid(getuid()) == -1) {
+    uid_t uid = getuid();
+
+    /*
+     * Raise privileges first so that the subsequent setuid() call operates
+     * in privileged mode. When euid == 0, setuid() sets all three UIDs
+     * (real, effective, saved) to the target value, permanently dropping
+     * privileges. Without this, calling setuid() from an unprivileged
+     * state would only change the effective UID, leaving the saved
+     * set-user-ID at 0 and privileges recoverable.
+     */
+    if(seteuid(0) == -1) {
+        bbox_perror("bbox_drop_privileges",
+                "could not raise privileges for permanent drop: %s.\n",
+                    strerror(errno));
+        return -1;
+    }
+
+    if(setuid(uid) == -1) {
         bbox_perror("bbox_drop_privileges",
                 "could not drop privileges: %s.\n",
                     strerror(errno));
