@@ -898,7 +898,7 @@ int bbox_try_fix_pkg_cache_symlink(char *module) {
         goto cleanup_and_exit;
     }
 
-    buf[bufsize - 1] = '\0';
+    buf[nbytes] = '\0';
 
     char * const argv[] = {"mkdir", "-p", (char*const) buf, NULL};
     if(bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,
