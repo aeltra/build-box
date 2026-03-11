@@ -255,6 +255,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         if(unshare(CLONE_NEWPID | CLONE_NEWNS) == -1) {
             bbox_perror("bbox_runas_user_chrooted",
                     "failed to isolate process: %s\n", strerror(errno));
+            bbox_lower_privileges();
             return BBOX_ERR_RUNTIME;
         }
 
@@ -262,6 +263,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         if((pid = fork()) == -1) {
             bbox_perror("bbox_runas_user_chrooted", "fork failed: %s\n",
                     strerror(errno));
+            bbox_lower_privileges();
             return BBOX_ERR_RUNTIME;
         }
 
@@ -278,7 +280,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     /* Drop privileges in both parent and child (if there is a child). */
     int drop_priv_result = bbox_drop_privileges();
 
-    /* Here pid is 0 if we didn't fork or if we forked and are the parent. */
+    /* Here pid is 0 if we didn't fork or if we forked and are the child. */
     if(pid == 0) {
         if(drop_priv_result == -1) {
             bbox_perror("bbox_runas_user_chrooted",
