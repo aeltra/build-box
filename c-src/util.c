@@ -71,13 +71,45 @@ void bbox_sanitize_environment()
             goto next;
         if(!strncmp(start, "HOME=", 5))
             goto next;
+        if(!strncmp(start, "ASFLAGS=", 8))
+            goto next;
+        if(!strncmp(start, "ASFLAGS_FOR_BUILD=", 18))
+            goto next;
         if(!strncmp(start, "CFLAGS=", 7))
             goto next;
-        if(!strncmp(start, "CXXFLAGS=", 9))
+        if(!strncmp(start, "CFLAGS_FOR_BUILD=", 17))
             goto next;
         if(!strncmp(start, "CPPFLAGS=", 9))
             goto next;
+        if(!strncmp(start, "CPPFLAGS_FOR_BUILD=", 19))
+            goto next;
+        if(!strncmp(start, "CXXFLAGS=", 9))
+            goto next;
+        if(!strncmp(start, "CXXFLAGS_FOR_BUILD=", 19))
+            goto next;
+        if(!strncmp(start, "DFLAGS=", 7))
+            goto next;
+        if(!strncmp(start, "DFLAGS_FOR_BUILD=", 17))
+            goto next;
+        if(!strncmp(start, "FCFLAGS=", 8))
+            goto next;
+        if(!strncmp(start, "FCFLAGS_FOR_BUILD=", 18))
+            goto next;
+        if(!strncmp(start, "FFLAGS=", 7))
+            goto next;
+        if(!strncmp(start, "FFLAGS_FOR_BUILD=", 17))
+            goto next;
         if(!strncmp(start, "LDFLAGS=", 8))
+            goto next;
+        if(!strncmp(start, "LDFLAGS_FOR_BUILD=", 18))
+            goto next;
+        if(!strncmp(start, "OBJCFLAGS=", 10))
+            goto next;
+        if(!strncmp(start, "OBJCFLAGS_FOR_BUILD=", 20))
+            goto next;
+        if(!strncmp(start, "OBJCXXFLAGS=", 12))
+            goto next;
+        if(!strncmp(start, "OBJCXXFLAGS_FOR_BUILD=", 22))
             goto next;
 
         if((end = strchr(start, '=')) == NULL)
@@ -93,8 +125,7 @@ void bbox_sanitize_environment()
         unsetenv(name);
         free(name);
 
-        /* After unsetenv, environ shifts down. Restart from the beginning. */
-        i = 0;
+        /* After unsetenv, environ[i] is now the next entry. */
         continue;
 
     next:
