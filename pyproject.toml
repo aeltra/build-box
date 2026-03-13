@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "build-box-utils"
+dynamic = ["version"]
+description = "Aeltra OS build sandbox management utility"
+license = "MIT"
+authors = [
+    {name = "Tobias Koch", email = "tobias.koch@gmail.com"},
+]
+requires-python = ">= 3"
+keywords = ["Aeltra", "OS", "cross-compile", "bootstrap"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/aeltra/build-box-utils"
+
+[project.optional-dependencies]
+lint = ["flake8"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.setuptools.packages.find]
+where = ["lib"]
+namespaces = true

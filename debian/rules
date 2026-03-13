@@ -3,7 +3,7 @@
 export DH_VERBOSE = 1
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
-export BUILD_BOX_VERSION = $(shell \
+BUILD_BOX_VERSION = $(shell \
         head -n1 debian/changelog | awk '{{print $$2}}' | \
                 sed 's/(\|)//g' | rev | cut -d- -f2- | rev \
 )
@@ -12,6 +12,7 @@ export BUILD_BOX_VERSION = $(shell \
 	dh $@ --with python3 --buildsystem=pybuild
 
 override_dh_auto_configure:
+	echo $(BUILD_BOX_VERSION) > VERSION
 	autoreconf -i
 	mkdir -p .build
 	(cd .build && ../configure --prefix=/usr --exec-prefix=/usr/sbin)
@@ -22,14 +23,15 @@ override_dh_auto_build:
 
 override_dh_auto_install:
 	(cd .build && install -m 0755 c-src/build-box-do ../bin)
-	
+
 	install -m 0755 -d debian/build-box-ng/usr/bin
+	install -m 0755 bin/build-box    debian/build-box-ng/usr/bin
 	install -m 0755 bin/build-box-do debian/build-box-ng/usr/bin
-	
+
 	install -m 0755 -d debian/build-box-ng/etc/bash_completion.d
 	install -m 0644 scripts/bash-completion.sh \
 		debian/build-box-ng/etc/bash_completion.d/build-box
-	
+
 	dh_auto_install
 
 override_dh_clean:
@@ -37,4 +39,5 @@ override_dh_clean:
 	rm -f bin/build-box-do Makefile.in aclocal.m4 c-src/Makefile.in compile \
 		config.h.in configure depcomp install-sh missing
 	rm -fr .build lib/build_box_utils.egg-info
+	rm -f VERSION
 	dh_clean

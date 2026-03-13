@@ -24,4 +24,6 @@ __pycache__
 /depcomp
 /install-sh
 /lib/build_box_utils.egg-info/
+/VERSION
+/dist/
 /missing
