@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "build-box-utils"
 dynamic = ["version"]
 description = "Aeltra OS build sandbox management utility"
-license = "MIT"
+license = {text = "MIT"}
 authors = [
     {name = "Tobias Koch", email = "tobias.koch@gmail.com"},
 ]
