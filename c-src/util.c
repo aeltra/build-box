@@ -491,7 +491,7 @@ int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
     int done = 0;
 
     // rtrim string.
-    while(!done && total_read >= 0) {
+    while(!done && *out_buf && total_read >= 0) {
         switch((*out_buf)[total_read]) {
             case '\r':
             case '\n':
