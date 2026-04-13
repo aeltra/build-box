@@ -216,11 +216,19 @@ int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
 
     /*
      * Unmounting the user's home directory requires extra precaution.
+     * The real home is bind-mounted at {chroot_home}/RealHome inside the
+     * sysroot.
      */
     if(!bbox_config_get_mount_home(conf)) {
-        const char *homedir = bbox_config_get_home_dir(conf);
+        const char *chroot_home = bbox_config_get_chroot_home_dir(conf);
 
-        bbox_path_join(&buf, sys_root, homedir, &buf_len);
+        char *realhome_relpath = NULL;
+        size_t rh_buf_len = 0;
+
+        bbox_path_join(&realhome_relpath, chroot_home, "RealHome",
+                &rh_buf_len);
+
+        bbox_path_join(&buf, sys_root, realhome_relpath, &buf_len);
 
         /*
          * We must be able to stat the bind-mounted home directory...
@@ -228,25 +236,28 @@ int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
         if(lstat(buf, &st) == -1) {
             /* ...unless it doesn't exist. */
             if(errno == ENOENT) {
+                free(realhome_relpath);
                 free(buf);
                 return 0;
             }
             bbox_perror("umount", "could not stat '%s': %s.\n", buf,
                     strerror(errno));
+            free(realhome_relpath);
             free(buf);
             return -1;
         }
 
-        /* 
+        /*
          * It has to be a directory.
          */
         if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
             bbox_perror("umount", "%s is not a directory.\n", buf);
+            free(realhome_relpath);
             free(buf);
             return -1;
         }
 
-        /* 
+        /*
          * And it must belong to the user who executed build box.
          */
         if(st.st_uid != uid) {
@@ -255,14 +266,18 @@ int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
                 "directory '%s' is not owned by user id '%ld'.\n",
                 buf, (long) uid
             );
+            free(realhome_relpath);
             free(buf);
             return -1;
         }
 
-        if(bbox_umount_unbind(sys_root, homedir) < 0) {
+        if(bbox_umount_unbind(sys_root, realhome_relpath) < 0) {
+            free(realhome_relpath);
             free(buf);
             return -1;
         }
+
+        free(realhome_relpath);
     }
 
     free(buf);

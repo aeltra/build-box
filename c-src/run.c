@@ -296,10 +296,11 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
      */
 
     /* Do this while we're at the fs root. */
-    bbox_try_fix_pkg_cache_symlink("");
+    bbox_try_fix_pkg_cache_symlink("",
+            bbox_config_get_chroot_home_dir(conf));
 
     /* this is non-critical. */
-    char *home_dir = bbox_config_get_home_dir(conf);
+    char *home_dir = bbox_config_get_chroot_home_dir(conf);
     if(home_dir)
         (void)chdir(home_dir);
 
@@ -411,7 +412,7 @@ int bbox_run(int argc, char * const argv[])
      * lowered privileges.
      */
     if(bbox_config_do_file_updates(conf))
-        bbox_update_chroot_dynamic_config(buf);
+        bbox_update_chroot_dynamic_config(buf, conf);
 
     /*
      * We clean out most of the environment except for variables starting with
@@ -420,8 +421,8 @@ int bbox_run(int argc, char * const argv[])
      */
     bbox_sanitize_environment();
 
-    if(bbox_config_get_home_dir(conf))
-        setenv("HOME", bbox_config_get_home_dir(conf), 1);
+    if(bbox_config_get_chroot_home_dir(conf))
+        setenv("HOME", bbox_config_get_chroot_home_dir(conf), 1);
 
     rval = bbox_runas_user_chrooted(buf, argc-non_optind, &argv[non_optind],
             conf);

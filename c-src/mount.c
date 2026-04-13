@@ -276,7 +276,8 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     return rval;
 }
 
-int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
+int bbox_mount_bind(const char *sys_root, const char *source,
+        const char *target_relpath, int recursive,
         unsigned long remount_flags)
 {
     char *target = NULL;
@@ -285,7 +286,8 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
     int dir_fd = -1;
     int is_mounted = 0;
 
-    bbox_path_join(&target, sys_root, source, &buf_len);
+    const char *relpath = target_relpath ? target_relpath : source;
+    bbox_path_join(&target, sys_root, relpath, &buf_len);
 
     if((is_mounted = bbox_mount_is_mounted(target)) == -1) {
         free(target);
@@ -372,7 +374,8 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         return -1;
 
     if(bbox_config_get_mount_dev(conf)) {
-        if(bbox_mount_bind(sys_root, "/dev", 0, MS_NOSUID | MS_NOEXEC) < 0)
+        if(bbox_mount_bind(sys_root, "/dev", NULL, 0,
+                    MS_NOSUID | MS_NOEXEC) < 0)
             return -1;
     }
 
@@ -391,22 +394,48 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
      * has already been normalized and checked for ownership, so we should be
      * fine calling `bbox_mount_bind`, which in turn checks the target directory
      * before executing the mount.
+     *
+     * Each target gets its own, isolated home directory at
+     * {sysroot}/home/{username}. The user's real home is bind-mounted onto
+     * {sysroot}/home/{username}/RealHome so that the user's source files
+     * remain accessible while dotfiles are kept per-target.
      */
     if(bbox_config_get_mount_home(conf)) {
         const char *homedir = bbox_config_get_home_dir(conf);
+        const char *chroot_home = bbox_config_get_chroot_home_dir(conf);
+
+        char *realhome_relpath = NULL;
+        size_t rh_buf_len = 0;
+
+        bbox_path_join(&realhome_relpath, chroot_home, "RealHome",
+                &rh_buf_len);
 
         /*
-         * We're not worried about this, because we are currently running with
-         * lowered privileges.
+         * Create the per-target home and the RealHome mount point inside the
+         * sysroot. We're not worried about this, because we are currently
+         * running with lowered privileges.
          */
-        if(bbox_sysroot_mkdir_p("mount", sys_root, homedir) == -1)
+        if(bbox_sysroot_mkdir_p("mount", sys_root, chroot_home) == -1) {
+            free(realhome_relpath);
             return -1;
+        }
+
+        if(bbox_sysroot_mkdir_p("mount", sys_root, realhome_relpath) == -1) {
+            free(realhome_relpath);
+            return -1;
+        }
 
         /*
-         * This internally checks the ownership of <sys_root>/<homedir>.
+         * Bind-mount the user's real home directory onto the RealHome mount
+         * point. This internally checks ownership of the target directory.
          */
-        if(bbox_mount_bind(sys_root, homedir, 0, MS_NOSUID | MS_NODEV) < 0)
+        if(bbox_mount_bind(sys_root, homedir, realhome_relpath, 0,
+                    MS_NOSUID | MS_NODEV) < 0) {
+            free(realhome_relpath);
             return -1;
+        }
+
+        free(realhome_relpath);
     }
 
     return 0;

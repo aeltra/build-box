@@ -24,6 +24,7 @@
 #
 
 import os
+import pwd
 import textwrap
 
 from aeltra.buildbox.misc.paths import Paths
@@ -67,14 +68,26 @@ class BuildBoxGenerator(ImageGenerator):
                 )
             )
 
+        username = pwd.getpwuid(os.getuid()).pw_name
+
+        # Create the per-target home directory inside the sysroot.
+        chroot_home = os.path.join(sysroot, "home", username)
+        os.makedirs(chroot_home, exist_ok=True)
+
+        # Ensure the host-side package cache directory exists.
         package_cache = os.path.join(
-            Paths.cache_dir(), "aeltra", "pkg-cache", self._release, self._arch,
-                self._libc
+            Paths.cache_dir(), "aeltra", "pkg-cache", self._release,
+                self._arch, self._libc
         )
 
         if not os.path.exists(package_cache):
             os.makedirs(package_cache, exist_ok=True)
 
+        # The symlink points to the absolute host path so that aept can
+        # resolve it during target creation (via offline-root path
+        # prefixing on the host). When entering the chroot at login/run
+        # time, bbox_try_fix_pkg_cache_symlink() will detect the stale
+        # host path and recreate the symlink through RealHome.
         package_cache_symlink = os.path.join(sysroot, ".pkg-cache")
         if not os.path.exists(package_cache_symlink):
             os.symlink(package_cache, package_cache_symlink)

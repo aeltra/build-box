@@ -195,7 +195,7 @@ int bbox_login(int argc, char * const argv[])
      * Copy passwd, group and hosts information from the host to the target.
      */
     if(bbox_config_do_file_updates(conf))
-        bbox_update_chroot_dynamic_config(buf);
+        bbox_update_chroot_dynamic_config(buf, conf);
 
     /*
      * We clean out most of the environment except for variables starting with
@@ -204,11 +204,11 @@ int bbox_login(int argc, char * const argv[])
      */
     bbox_sanitize_environment();
 
-    if(bbox_config_get_home_dir(conf))
-        setenv("HOME", bbox_config_get_home_dir(conf), 1);
+    if(bbox_config_get_chroot_home_dir(conf))
+        setenv("HOME", bbox_config_get_chroot_home_dir(conf), 1);
 
     /* If this succeeds, it doesn't return. */
-    if(bbox_login_sh_chrooted(buf, bbox_config_get_home_dir(conf)) == 0)
+    if(bbox_login_sh_chrooted(buf, bbox_config_get_chroot_home_dir(conf)) == 0)
         rval = 0;
 
 cleanup_and_exit:

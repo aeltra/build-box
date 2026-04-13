@@ -377,7 +377,7 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
         _exit(BBOX_ERR_RUNTIME);
 
     /* Do this while we're at the fs root. */
-    bbox_try_fix_pkg_cache_symlink("");
+    bbox_try_fix_pkg_cache_symlink("", home_dir);
 
     if(home_dir)
         (void)chdir(home_dir);
@@ -518,7 +518,8 @@ int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
     return WEXITSTATUS(child_status);
 }
 
-void bbox_update_chroot_dynamic_config(const char *sys_root)
+void bbox_update_chroot_dynamic_config(const char *sys_root,
+        const bbox_conf_t *conf)
 {
     struct stat st;
     char *buf1 = NULL;
@@ -526,6 +527,9 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
     size_t buf1_len = 0;
     size_t buf2_len = 0;
     int out_fd = -1;
+
+    uid_t invoking_uid = getuid();
+    const char *chroot_home = bbox_config_get_chroot_home_dir(conf);
 
     /* Copy the password database. */
 
@@ -553,6 +557,15 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
 
     struct passwd *pwd = NULL;
     while((pwd = getpwent()) != NULL) {
+        /*
+         * For the invoking user, substitute the home directory with
+         * the in-chroot home path so that tools consulting passwd
+         * inside the chroot see the correct home directory.
+         */
+        const char *pw_dir = pwd->pw_dir;
+        if(pwd->pw_uid == invoking_uid && chroot_home)
+            pw_dir = chroot_home;
+
         dprintf(
             out_fd,
             "%s:%s:%ld:%ld:%s:%s:%s\n",
@@ -561,7 +574,7 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
             (long) pwd->pw_uid,
             (long) pwd->pw_gid,
             pwd->pw_gecos,
-            pwd->pw_dir,
+            pw_dir,
             pwd->pw_shell
         );
     }
@@ -994,13 +1007,25 @@ cleanup_and_exit:
     return rval;
 }
 
-int bbox_try_fix_pkg_cache_symlink(char *module) {
+int bbox_try_fix_pkg_cache_symlink(const char *module,
+        const char *chroot_home)
+{
     int rval = 0;
     struct stat link_st;
+    struct stat target_st;
     char *out_buf = NULL;
     size_t out_buf_len = 0;
 
     if(lstat("/.pkg-cache", &link_st) == -1) {
+        if(chroot_home) {
+            char *fallback = NULL;
+            size_t fb_len = 0;
+            bbox_path_join(&fallback, chroot_home,
+                    "RealHome/.aeltra/cache/aeltra", &fb_len);
+            int rv = symlink(fallback, "/.pkg-cache");
+            free(fallback);
+            return rv;
+        }
         return symlink("/var/cache/aept", "/.pkg-cache");
     }
 
@@ -1020,6 +1045,23 @@ int bbox_try_fix_pkg_cache_symlink(char *module) {
     }
 
     buf[nbytes] = '\0';
+
+    /*
+     * If the symlink target does not exist (e.g. a pre-migration target
+     * with a stale host path), remove the symlink and recreate it with
+     * a path through RealHome.
+     */
+    if(stat(buf, &target_st) == -1 && errno == ENOENT && chroot_home) {
+        unlink("/.pkg-cache");
+
+        char *fallback = NULL;
+        size_t fb_len = 0;
+        bbox_path_join(&fallback, chroot_home,
+                "RealHome/.aeltra/cache/aeltra", &fb_len);
+        rval = symlink(fallback, "/.pkg-cache");
+        free(fallback);
+        goto cleanup_and_exit;
+    }
 
     char * const argv[] = {"mkdir", "-p", (char*const) buf, NULL};
     if(bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,

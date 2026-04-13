@@ -52,8 +52,15 @@ bbox_conf_t *bbox_config_new()
     char *homedir = NULL;
 
     struct passwd *pwd = getpwuid(uid);
-    if(pwd)
+    if(pwd) {
         homedir = pwd->pw_dir;
+        conf->user_name = strdup(pwd->pw_name);
+    }
+
+    if(!conf->user_name) {
+        bbox_perror("bbox_config_new", "could not determine user name.\n");
+        goto failure;
+    }
 
     /*
      * Normalize the path to mitigate the risk of any hypothetical symlink
@@ -67,12 +74,22 @@ bbox_conf_t *bbox_config_new()
     }
 
     /*
+     * Build the in-chroot home directory path. Inside the chroot, the home
+     * is always /home/{username}, regardless of where the real home directory
+     * lives on the host.
+     */
+
+    size_t buf_size = 0;
+
+    bbox_path_join(&conf->chroot_home_dir, "/home", conf->user_name, &buf_size);
+
+    /*
      * The home directory worked out above MUST be owned by the user who
      * invoked the program. Anything else is fishy and there is no reason to
      * allow it.
      */
 
-    size_t buf_size = 0;
+    buf_size = 0;
 
     if(bbox_isdir_and_owned_by("bbox_config_new", conf->home_dir, uid) == -1)
         goto failure;
@@ -137,6 +154,16 @@ int bbox_config_set_home_dir(bbox_conf_t *conf, const char *path)
 char *bbox_config_get_home_dir(const bbox_conf_t *conf)
 {
     return conf->home_dir;
+}
+
+char *bbox_config_get_chroot_home_dir(const bbox_conf_t *conf)
+{
+    return conf->chroot_home_dir;
+}
+
+char *bbox_config_get_user_name(const bbox_conf_t *conf)
+{
+    return conf->user_name;
 }
 
 void bbox_config_clear_mount(bbox_conf_t *c)
@@ -248,6 +275,8 @@ void bbox_config_free(bbox_conf_t *conf)
 {
     if(conf) {
         free(conf->home_dir);
+        free(conf->chroot_home_dir);
+        free(conf->user_name);
         free(conf->target_dir);
         free(conf);
     }

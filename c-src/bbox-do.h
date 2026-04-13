@@ -24,6 +24,8 @@
 typedef struct {
     char *target_dir;
     char *home_dir;
+    char *chroot_home_dir;
+    char *user_name;
     unsigned int config_bits;
 } bbox_conf_t;
 
@@ -34,6 +36,9 @@ char *bbox_config_get_target_dir(const bbox_conf_t *conf);
 
 int bbox_config_set_home_dir(bbox_conf_t *conf, const char *path);
 char *bbox_config_get_home_dir(const bbox_conf_t *conf);
+
+char *bbox_config_get_chroot_home_dir(const bbox_conf_t *conf);
+char *bbox_config_get_user_name(const bbox_conf_t *conf);
 
 void bbox_config_clear_mount(bbox_conf_t *conf);
 
@@ -76,7 +81,8 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         char * const argv[], const bbox_conf_t *conf);
 int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
         char **out_buf, size_t *out_buf_size);
-void bbox_update_chroot_dynamic_config(const char *sys_root);
+void bbox_update_chroot_dynamic_config(const char *sys_root,
+        const bbox_conf_t *conf);
 void bbox_sanitize_environment();
 
 int bbox_lower_privileges();
@@ -91,7 +97,8 @@ int bbox_mkdir_p(const char *module, const char *path);
 int bbox_sysroot_mkdir_p(const char *module, const char *sysroot,
         const char *path);
 int bbox_is_subdir_of(const char *path, const char *subdir);
-int bbox_try_fix_pkg_cache_symlink(char *module);
+int bbox_try_fix_pkg_cache_symlink(const char *module,
+        const char *chroot_home);
 
 char *bbox_get_user_dir(uid_t uid, size_t *n_ptr);
 int validate_target_name(const char *module, const char *target_name);

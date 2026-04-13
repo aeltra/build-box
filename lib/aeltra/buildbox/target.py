@@ -99,6 +99,13 @@ class BuildBoxTarget:
             with Sysroot(target_dir):
                 for specfile in specs:
                     image_gen.customize(target_dir, specfile)
+
+            # Remove the host-side pkg-cache symlink. It was needed during
+            # bootstrapping (aept offline-root on the host) but will be
+            # recreated with a chroot-appropriate path at login/run time.
+            pkg_cache_link = os.path.join(target_dir, ".pkg-cache")
+            if os.path.islink(pkg_cache_link):
+                os.remove(pkg_cache_link)
         except (KeyboardInterrupt, Exception):
             old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
