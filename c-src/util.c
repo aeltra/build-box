@@ -441,6 +441,8 @@ int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
         bbox_perror("bbox_run_command_capture",
                 "failed to start subprocess: %s.\n",
                 strerror(errno));
+        close(pipefd[0]);
+        close(pipefd[1]);
         return -1;
     }
 
