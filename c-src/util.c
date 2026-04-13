@@ -850,6 +850,56 @@ int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid)
     return 0;
 }
 
+int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
+{
+    struct stat st;
+
+    char *normalized = realpath(dir, NULL);
+
+    if(!normalized) {
+        bbox_perror(
+            module, "unable to normalize path '%s': %s.\n",
+            dir, strerror(errno)
+        );
+        return -1;
+    }
+
+    int fd = open(normalized, O_PATH | O_DIRECTORY | O_NOFOLLOW);
+
+    if(fd == -1) {
+        bbox_perror(
+            module, "could not open '%s': %s.\n", dir, strerror(errno)
+        );
+        free(normalized);
+        return -1;
+    }
+
+    free(normalized);
+
+    if(fstat(fd, &st) == -1) {
+        bbox_perror(
+            module, "could not stat '%s': %s.\n", dir, strerror(errno)
+        );
+        close(fd);
+        return -1;
+    }
+
+    if(!S_ISDIR(st.st_mode)) {
+        bbox_perror(module, "%s is not a directory.\n", dir);
+        close(fd);
+        return -1;
+    }
+
+    if(st.st_uid != uid) {
+        bbox_perror(module, "directory '%s' is not owned by user id '%ld'.\n",
+                dir, (long) uid);
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
 int bbox_mkdir_p(const char *module, const char *path)
 {
     char *out_buf = NULL;

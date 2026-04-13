@@ -86,6 +86,7 @@ int bbox_reset_supplementary_groups();
 
 int bbox_check_user_in_group_build_box();
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid);
+int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid);
 int bbox_mkdir_p(const char *module, const char *path);
 int bbox_sysroot_mkdir_p(const char *module, const char *sysroot,
         const char *path);

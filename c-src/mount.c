@@ -201,6 +201,8 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     char *mount_point = NULL;
     char *target = NULL;
     size_t buf_len = 0;
+    char fd_path[64];
+    int dir_fd = -1;
 
     int is_mounted = 0;
 
@@ -226,29 +228,36 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
         return 0;
     }
 
-    if(bbox_isdir_and_owned_by("mount", target, getuid()) == -1) {
+    /*
+     * Open the target directory and verify ownership via the file descriptor
+     * to eliminate the TOCTOU window between the ownership check and mount.
+     */
+    if((dir_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
         free(target);
         return -1;
     }
+
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
 
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
     if(bbox_raise_privileges() == -1) {
+        close(dir_fd);
         free(target);
         return -1;
     }
 
     int rval = 0;
 
-    if(mount(NULL, target, filesystemtype, 0, NULL) != 0)
+    if(mount(NULL, fd_path, filesystemtype, 0, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -261,6 +270,7 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
+    close(dir_fd);
     free(target);
     return rval;
 }
@@ -270,6 +280,8 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
 {
     char *target = NULL;
     size_t buf_len = 0;
+    char fd_path[64];
+    int dir_fd = -1;
     int is_mounted = 0;
 
     bbox_path_join(&target, sys_root, source, &buf_len);
@@ -284,16 +296,23 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
         return 0;
     }
 
-    if(bbox_isdir_and_owned_by("mount", target, getuid()) == -1) {
+    /*
+     * Open the target directory and verify ownership via the file descriptor
+     * to eliminate the TOCTOU window between the ownership check and mount.
+     */
+    if((dir_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
         free(target);
         return -1;
     }
+
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
 
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
     if(bbox_raise_privileges() == -1) {
+        close(dir_fd);
         free(target);
         return -1;
     }
@@ -302,13 +321,13 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
 
     unsigned long mountflags = MS_BIND | (recursive ? MS_REC : 0);
 
-    if(mount(source, target, NULL, mountflags, NULL) != 0)
+    if(mount(source, fd_path, NULL, mountflags, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 source, target, strerror(errno));
         rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(mount(NULL, fd_path, NULL, MS_PRIVATE, NULL) != 0)
     {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
@@ -321,7 +340,7 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
      * only way to add restrictions like MS_NOSUID or MS_NOEXEC.
      */
     if(rval == 0 && remount_flags) {
-        if(mount(NULL, target, NULL,
+        if(mount(NULL, fd_path, NULL,
                     MS_BIND | MS_REMOUNT | remount_flags, NULL) != 0)
         {
             bbox_perror("mount",
@@ -337,6 +356,7 @@ int bbox_mount_bind(const char *sys_root, const char *source, int recursive,
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
+    close(dir_fd);
     free(target);
     return rval;
 }
