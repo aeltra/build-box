@@ -380,7 +380,7 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     bbox_try_fix_pkg_cache_symlink("");
 
     if(home_dir)
-        if(chdir(home_dir) == -1);
+        (void)chdir(home_dir);
 
     /* search for a shell. */
     for(size_t i = 0; (sh = shells[i]) != NULL; i++) {

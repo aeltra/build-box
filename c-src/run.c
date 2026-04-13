@@ -300,7 +300,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     /* this is non-critical. */
     char *home_dir = bbox_config_get_home_dir(conf);
     if(home_dir)
-        if(chdir(home_dir));
+        (void)chdir(home_dir);
 
     /* search for a shell. */
     for(size_t i = 0; (sh = shells[i]) != NULL; i++) {
