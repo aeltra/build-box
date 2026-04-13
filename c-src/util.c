@@ -141,7 +141,7 @@ int bbox_copy_file(const char *src, const char *dst)
     size_t dst_len = strlen(dst);
     char *ptr = NULL;
     int in_fd = -1, out_fd = -1, rval = -1;
-    int num_bytes_read, num_bytes_written;
+    ssize_t num_bytes_read, num_bytes_written;
 
     if(lstat(src, &src_st) == -1) {
         bbox_perror("bbox_copy_file", "could not stat '%s'.\n", src);
@@ -409,9 +409,9 @@ int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
     int pid;
     int child_status;
     int pipefd[2];
-    int bytes_read;
-    int total_read = 0;
-    int req_space;
+    ssize_t bytes_read;
+    ssize_t total_read = 0;
+    ssize_t req_space;
     char buf[BBOX_COPY_BUF_SIZE];
 
     if(pipe(pipefd) == -1) {
@@ -488,6 +488,8 @@ int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
             break;
     }
 
+    close(pipefd[0]);
+
     int done = 0;
 
     // rtrim string.
@@ -563,6 +565,7 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
             pwd->pw_shell
         );
     }
+    endpwent();
 
     close(out_fd);
     out_fd = -1;
@@ -612,6 +615,7 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
 
         dprintf(out_fd, "\n");
     }
+    endgrent();
 
     close(out_fd);
     out_fd = -1;

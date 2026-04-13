@@ -204,6 +204,9 @@ int bbox_login(int argc, char * const argv[])
      */
     bbox_sanitize_environment();
 
+    if(bbox_config_get_home_dir(conf))
+        setenv("HOME", bbox_config_get_home_dir(conf), 1);
+
     /* If this succeeds, it doesn't return. */
     if(bbox_login_sh_chrooted(buf, bbox_config_get_home_dir(conf)) == 0)
         rval = 0;

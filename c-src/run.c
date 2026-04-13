@@ -419,6 +419,9 @@ int bbox_run(int argc, char * const argv[])
      */
     bbox_sanitize_environment();
 
+    if(bbox_config_get_home_dir(conf))
+        setenv("HOME", bbox_config_get_home_dir(conf), 1);
+
     rval = bbox_runas_user_chrooted(buf, argc-non_optind, &argv[non_optind],
             conf);
 
