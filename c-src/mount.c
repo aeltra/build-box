@@ -251,7 +251,8 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
 
     int rval = 0;
 
-    if(mount(NULL, fd_path, filesystemtype, 0, NULL) != 0)
+    if(mount(NULL, fd_path, filesystemtype,
+                MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));
