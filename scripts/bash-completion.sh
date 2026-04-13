@@ -22,21 +22,54 @@
 # THE SOFTWARE.
 #
 
+# Return the argument placeholder for an option of the given subcommand,
+# or nothing if the option takes no argument.
+_build_box_opt_takes_arg() {
+    case "$1" in
+        create)
+            case "$2" in
+                -r|--release)  echo '<name>'   ;;
+                -a|--arch)     echo '<arch>'   ;;
+                -l|--libc)     echo '<libc>'   ;;
+                --repo-base)   echo '<url>'    ;;
+                -t|--targets)  echo '<dir>'    ;;
+            esac
+            ;;
+        info)
+            case "$2" in
+                -k|--key)      echo '<key>'    ;;
+                -t|--targets)  echo '<dir>'    ;;
+            esac
+            ;;
+        delete|list)
+            case "$2" in
+                -t|--targets)  echo '<dir>'    ;;
+            esac
+            ;;
+        login|run|mount)
+            case "$2" in
+                -m|--mount)    echo '<fstype>' ;;
+                -t|--targets)  echo '<dir>'    ;;
+            esac
+            ;;
+        umount)
+            case "$2" in
+                -m|--umount)   echo '<fstype>' ;;
+                -t|--targets)  echo '<dir>'    ;;
+            esac
+            ;;
+    esac
+}
+
 _build_box_arg_complete() {
-    local _build_box_cmd="${COMP_WORDS[0]} ${COMP_WORDS[1]}"
+    local _subcommand="${COMP_WORDS[1]}"
     local _previous_arg="${COMP_WORDS[$(($COMP_CWORD-1))]}"
 
     local _opt_arg=""
 
     case "$_previous_arg" in
         -*)
-            _opt_arg=$(
-                $_build_box_cmd --help | \
-                    grep -E '^  -' | \
-                    sed -E -e 's/^\s*/,/g' -e 's/  .*$//g' -e 's/,\s+/,/g' -e 's/ /,/g' -e 's/  .*$//g' | \
-                    grep -E -- ",$_previous_arg," | \
-                    cut -d',' -f4
-            )
+            _opt_arg=$(_build_box_opt_takes_arg "$_subcommand" "$_previous_arg")
             ;;
     esac
 
@@ -44,7 +77,7 @@ _build_box_arg_complete() {
         '<arch>')
             COMPREPLY=(
                 $(
-                    compgen -W "aarch64 armv7a mips64el powerpc64le riscv64 s390x x86_64" \
+                    compgen -W "aarch64 loongarch64 mips64el powerpc64le riscv64 s390x x86_64" \
                         -- ${COMP_WORDS[COMP_CWORD]}
                 )
             )
@@ -77,9 +110,9 @@ _build_box_arg_complete() {
     local _target_dir="/var/lib/build-box/users/$(id -u)/targets"
 
     while [ "$_word_counter" -lt "${#COMP_WORDS[*]}" ]; do
-        local _varg="${COMP_WORDS[$_word_counter]}"
+        local _word="${COMP_WORDS[$_word_counter]}"
 
-        case "$_varg" in
+        case "$_word" in
             -t|--targets)
                 case "${COMP_WORDS[$(($_word_counter+1))]}" in
                     =)
@@ -93,13 +126,7 @@ _build_box_arg_complete() {
                 esac
                 ;;
             -*)
-                _opt_arg=$(
-                    $_build_box_cmd --help | \
-                        grep -E '^  -' | \
-                        sed -E -e 's/^\s*/,/g' -e 's/  .*$//g' -e 's/,\s+/,/g' -e 's/ /,/g' -e 's/  .*$//g' | \
-                        grep -E -- ",$_varg," | \
-                        cut -d',' -f4
-                )
+                _opt_arg=$(_build_box_opt_takes_arg "$_subcommand" "$_word")
 
                 if [ -n "$_opt_arg" ]; then
                     case "${COMP_WORDS[$(($_word_counter+1))]}" in
@@ -121,19 +148,22 @@ _build_box_arg_complete() {
         esac
     done
 
-    local _expected_arg=$(
-        $_build_box_cmd --help | \
-            grep -E '^  build-box ' | \
-            sed -E -e 's/^\s*//' -e 's/\[OPTIONS\]//' -e 's/\s+/ /g' | \
-            cut -d' ' -f"$(($_varg_counter))"
-    )
+    # Determine expected positional argument based on subcommand and position.
+    # _varg_counter includes "build-box" (1) and the subcommand (2), so the
+    # first positional argument corresponds to _varg_counter == 3.
+    local _expected_arg=""
 
-    # The 'delete' command may be handed multiple target names
-    if [ "$_expected_arg" = "..." ] || [ "$_expected_arg" = "" ]; then
-        if [ "${COMP_WORDS[1]}" = "delete" ]; then
-            _expected_arg="<target-name>"
-        fi
-    fi
+    case "$_subcommand" in
+        create)
+            [ "$_varg_counter" -ge 4 ] && _expected_arg='<spec>'
+            ;;
+        delete)
+            [ "$_varg_counter" -ge 3 ] && _expected_arg='<target-name>'
+            ;;
+        info|login|mount|umount|run)
+            [ "$_varg_counter" -eq 3 ] && _expected_arg='<target-name>'
+            ;;
+    esac
 
     case "$_expected_arg" in
         '<target-name>')
