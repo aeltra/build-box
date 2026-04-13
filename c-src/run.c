@@ -233,7 +233,8 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         }
 
         if(pid == 0 && bbox_config_get_mount_proc(conf)) {
-            if(mount(NULL, "/proc", "proc", 0, NULL) != 0) {
+            if(mount(NULL, "/proc", "proc",
+                        MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0) {
                 bbox_perror("bbox_runas_user_chrooted",
                         "failed to mount /proc inside namespace: %s\n",
                         strerror(errno));
