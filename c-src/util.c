@@ -553,7 +553,7 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
             out_fd,
             "%s:%s:%ld:%ld:%s:%s:%s\n",
             pwd->pw_name,
-            pwd->pw_passwd,
+            "x",
             (long) pwd->pw_uid,
             (long) pwd->pw_gid,
             pwd->pw_gecos,
@@ -596,7 +596,7 @@ void bbox_update_chroot_dynamic_config(const char *sys_root)
             out_fd,
             "%s:%s:%ld:",
             grp->gr_name,
-            grp->gr_passwd,
+            "x",
             (long) grp->gr_gid
         );
 
