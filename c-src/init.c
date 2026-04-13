@@ -91,6 +91,11 @@ int bbox_init_user_directory()
 
     char *user_dir = bbox_get_user_dir(uid, NULL);
 
+    if(!user_dir) {
+        bbox_perror("bbox_init_user_directory", "failed to get user directory.\n");
+        return -1;
+    }
+
     struct stat st;
 
     if(lstat(user_dir, &st) == 0)

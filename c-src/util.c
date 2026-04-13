@@ -222,7 +222,7 @@ cleanup_and_exit:
     if(out_fd != -1)
         close(out_fd);
 
-    if(lstat(tmp_dst, &dst_st) == 0) {
+    if(tmp_dst && lstat(tmp_dst, &dst_st) == 0) {
         if(rval == 0) {
             rename(tmp_dst, dst);
         } else {
@@ -1012,7 +1012,7 @@ int bbox_try_fix_pkg_cache_symlink(char *module) {
         abort();
     }
 
-    int nbytes = readlink("/.pkg-cache", buf, bufsize);
+    ssize_t nbytes = readlink("/.pkg-cache", buf, bufsize);
 
     if(nbytes < 0 || nbytes >= bufsize) {
         rval = -1;
