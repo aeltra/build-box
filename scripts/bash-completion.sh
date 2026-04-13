@@ -199,11 +199,9 @@ _build_box_complete() {
             )
             ;;
         *)
-            _valid_commands=$(echo $_valid_commands | sed 's/ /|/g')
-
-            eval "case \"${COMP_WORDS[1]}\" in
-                $_valid_commands)
-                    case \"${COMP_WORDS[COMP_CWORD]}\" in
+            case "${COMP_WORDS[1]}" in
+                create|delete|info|list|login|mount|run|umount)
+                    case "${COMP_WORDS[COMP_CWORD]}" in
                         -*)
                             _build_box_opt_complete
                             ;;
@@ -212,7 +210,7 @@ _build_box_complete() {
                             ;;
                     esac
                     ;;
-            esac"
+            esac
             ;;
     esac
 }
