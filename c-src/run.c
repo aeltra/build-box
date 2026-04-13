@@ -40,7 +40,7 @@
 
 #include "bbox-do.h"
 
-static pid_t pid_one = 0;
+static volatile pid_t pid_one = 0;
 
 void signal_handler(int sig)
 {
