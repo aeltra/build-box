@@ -1012,7 +1012,6 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
 {
     int rval = 0;
     struct stat link_st;
-    struct stat target_st;
     char *out_buf = NULL;
     size_t out_buf_len = 0;
 
@@ -1045,23 +1044,6 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
     }
 
     buf[nbytes] = '\0';
-
-    /*
-     * If the symlink target does not exist (e.g. a pre-migration target
-     * with a stale host path), remove the symlink and recreate it with
-     * a path through RealHome.
-     */
-    if(stat(buf, &target_st) == -1 && errno == ENOENT && chroot_home) {
-        unlink("/.pkg-cache");
-
-        char *fallback = NULL;
-        size_t fb_len = 0;
-        bbox_path_join(&fallback, chroot_home,
-                "RealHome/.aeltra/cache/aeltra", &fb_len);
-        rval = symlink(fallback, "/.pkg-cache");
-        free(fallback);
-        goto cleanup_and_exit;
-    }
 
     char * const argv[] = {"mkdir", "-p", (char*const) buf, NULL};
     if(bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,

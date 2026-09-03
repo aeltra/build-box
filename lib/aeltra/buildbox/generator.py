@@ -74,23 +74,27 @@ class BuildBoxGenerator(ImageGenerator):
         chroot_home = os.path.join(sysroot, "home", username)
         os.makedirs(chroot_home, exist_ok=True)
 
-        # Ensure the host-side package cache directory exists.
-        package_cache = os.path.join(
-            Paths.cache_dir(), "aeltra", "pkg-cache", self._release,
-                self._arch, self._libc
-        )
+        # Make sure the package cache location exists
+        os.makedirs(self._package_cache_path(), exist_ok=True)
 
-        if not os.path.exists(package_cache):
-            os.makedirs(package_cache, exist_ok=True)
-
-        # The symlink points to the absolute host path so that aept can
-        # resolve it during target creation (via offline-root path
-        # prefixing on the host). When entering the chroot at login/run
-        # time, bbox_try_fix_pkg_cache_symlink() will detect the stale
-        # host path and recreate the symlink through RealHome.
         package_cache_symlink = os.path.join(sysroot, ".pkg-cache")
-        if not os.path.exists(package_cache_symlink):
-            os.symlink(package_cache, package_cache_symlink)
+        if not os.path.lexists(package_cache_symlink):
+            chroot_pkg_cache = os.path.join(
+                "/", "home", username, "RealHome", ".aeltra", "cache",
+                "aeltra", "pkg-cache",
+                self._release, self._arch, self._libc,
+            )
+            os.symlink(chroot_pkg_cache, package_cache_symlink)
+    #end function
+
+    def _aept_options(self, sysroot):
+        return ["--cache-dir", self._package_cache_path()]
+
+    def _package_cache_path(self):
+        return os.path.join(
+            Paths.cache_dir(), "aeltra", "pkg-cache",
+            self._release, self._arch, self._libc,
+        )
     #end function
 
 #end class
