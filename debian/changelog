@@ -1,3 +1,19 @@
+build-box-utils (0.14.0-1) unstable; urgency=medium
+
+  * Fixed: chroot activity during target creation could rewrite the
+    /.pkg-cache symlink to a RealHome-relative target, invalidating
+    the host view and breaking subsequent host-side aept invocations
+    with "'cache_dir' exists but is not a directory". The symlink is
+    no longer mutated in-chroot; it is created once at prepare time
+    pointing through RealHome, and host-side aept bypasses it by
+    passing --cache-dir directly. Requires aept >= 0.3.0.
+  * Changed: /.pkg-cache is created chroot-relative from the start
+    (broken from host view, resolves inside the chroot via the
+    RealHome bind mount). Pre-existing targets carrying the old
+    host-absolute symlink should be rebuilt.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Fri, 04 Sep 2026 01:24:38 +0300
+
 build-box-utils (0.13.0-1) unstable; urgency=medium
 
   * Update bash completions
