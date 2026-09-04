@@ -1,3 +1,16 @@
+build-box-utils (0.14.1-1) unstable; urgency=medium
+
+  * Fixed: host-side scripts in specfiles that invoke aept themselves
+    (e.g. `aept --offline-root "$AELTRA_SYSROOT" update`) failed the
+    same "'cache_dir' exists but is not a directory" validation that
+    0.14.0 fixed for framework-launched aept calls. The framework now
+    also injects AEPT_CACHE_DIR into the env of host scripts so their
+    own aept invocations pick up the host cache path. Chroot scripts
+    do not receive it (they use /.pkg-cache via RealHome as before).
+    Requires aept >= 0.4.0 and aeltra-distro-tools >= 1.13.0.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Fri, 04 Sep 2026 10:28:06 +0300
+
 build-box-utils (0.14.0-1) unstable; urgency=medium
 
   * Fixed: chroot activity during target creation could rewrite the
