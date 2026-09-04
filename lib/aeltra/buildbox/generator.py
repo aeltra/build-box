@@ -90,11 +90,13 @@ class BuildBoxGenerator(ImageGenerator):
     def _aept_options(self, sysroot):
         return ["--cache-dir", self._package_cache_path()]
 
+    def _host_env(self, sysroot):
+        return {"AEPT_CACHE_DIR": self._package_cache_path()}
+
     def _package_cache_path(self):
         return os.path.join(
             Paths.cache_dir(), "aeltra", "pkg-cache",
             self._release, self._arch, self._libc,
         )
-    #end function
 
 #end class
