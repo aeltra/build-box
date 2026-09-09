@@ -44,6 +44,8 @@ class BuildBoxGenerator(ImageGenerator):
         arch tools
 
         option cache_dir /.pkg-cache
+        option clean_cache no
+
         {opt_check_sig}
         """  # noqa
     )
