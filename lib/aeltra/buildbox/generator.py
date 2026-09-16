@@ -45,6 +45,7 @@ class BuildBoxGenerator(ImageGenerator):
 
         option cache_dir /.pkg-cache
         option clean_cache no
+        option ignore_ownership 1
 
         {opt_check_sig}
         """  # noqa
