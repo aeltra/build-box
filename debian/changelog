@@ -1,3 +1,17 @@
+build-box-utils (0.15.0-1) unstable; urgency=medium
+
+  * Changed: the generated aept.conf inside the target now sets
+    "clean_cache no", so aept keeps downloaded packages in /.pkg-cache
+    instead of purging them after each operation.
+  * Changed: the generated aept.conf now sets "ignore_ownership 1",
+    since packages are unpacked as an unprivileged user and file
+    ownership inside the target cannot be preserved.
+  * Fixed: /home inside the sysroot is now created with mode 0755 to
+    match what base-files ships. Previously it inherited the umask and
+    "aept verify" reported a mode mismatch.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Wed, 16 Sep 2026 13:13:33 +0300
+
 build-box-utils (0.14.1-1) unstable; urgency=medium
 
   * Fixed: host-side scripts in specfiles that invoke aept themselves
