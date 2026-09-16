@@ -73,9 +73,11 @@ class BuildBoxGenerator(ImageGenerator):
 
         username = pwd.getpwuid(os.getuid()).pw_name
 
-        # Create the per-target home directory inside the sysroot.
+        # Create the per-target home directory inside the sysroot. Pin the
+        # mode of /home to what base-files ships, or "aept verify" complains.
         chroot_home = os.path.join(sysroot, "home", username)
         os.makedirs(chroot_home, exist_ok=True)
+        os.chmod(os.path.dirname(chroot_home), 0o755)
 
         # Make sure the package cache location exists
         os.makedirs(self._package_cache_path(), exist_ok=True)
