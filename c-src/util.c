@@ -38,7 +38,6 @@
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "bbox-do.h"
@@ -432,121 +431,6 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     bbox_perror("bbox_login_sh_chrooted", "failed to invoke shell: %s.\n",
             strerror(errno));
     return -1;
-}
-
-int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
-        char **out_buf, size_t *out_buf_size)
-{
-    int pid;
-    int child_status;
-    int pipefd[2];
-    ssize_t bytes_read;
-    ssize_t total_read = 0;
-    ssize_t req_space;
-    char buf[BBOX_COPY_BUF_SIZE];
-
-    if(pipe(pipefd) == -1) {
-        bbox_perror("bbox_run_command_capture",
-                "failed to construct pipe: %s.\n",
-                strerror(errno));
-        return -1;
-    }
-
-    /*
-     * It is important that we don't leave the buffer uninitialized, if the
-     * command won't produce any output.
-     */
-    if(*out_buf_size == 0) {
-        *out_buf_size = 256;
-        *out_buf = malloc(*out_buf_size);
-
-        if(!*out_buf) {
-            bbox_perror("bbox_run_command_capture", "out of memory!\n");
-            abort();
-        }
-
-        (*out_buf)[0] = '\0';
-    }
-
-    if((pid = fork()) == -1) {
-        bbox_perror("bbox_run_command_capture",
-                "failed to start subprocess: %s.\n",
-                strerror(errno));
-        close(pipefd[0]);
-        close(pipefd[1]);
-        return -1;
-    }
-
-    /* this is the child exec'ing for example 'mount'. */
-    if(pid == 0) {
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        dup2(pipefd[1], STDERR_FILENO);
-        close(pipefd[1]);
-
-        setenv("LC_ALL", "C", 1);
-        if(uid == 0) {
-            if(bbox_raise_privileges() == -1)
-                _exit(BBOX_ERR_RUNTIME);
-        }
-        execvp(cmd, argv);
-
-        /* if we make it here exec failed. */
-        _exit(BBOX_ERR_RUNTIME);
-    }
-
-    close(pipefd[1]);
-
-    while((bytes_read = read(pipefd[0], buf, BBOX_COPY_BUF_SIZE)) > 0) {
-        req_space = total_read + bytes_read + 1;
-
-        if(req_space > *out_buf_size) {
-            *out_buf_size = req_space * 2;
-            *out_buf = realloc(*out_buf, *out_buf_size);
-
-            if(!*out_buf) {
-                bbox_perror("bbox_run_command_capture", "out of memory!\n");
-                break;
-            }
-        }
-
-        memcpy(*out_buf + total_read, buf, bytes_read);
-        total_read += bytes_read;
-        (*out_buf)[total_read] = '\0';
-
-        /* 4MB should be plenty for our use cases. */
-        if(total_read > 4 * 1024 * 1024)
-            break;
-    }
-
-    close(pipefd[0]);
-
-    int done = 0;
-
-    // rtrim string.
-    while(!done && *out_buf && total_read >= 0) {
-        switch((*out_buf)[total_read]) {
-            case '\r':
-            case '\n':
-            case ' ':
-            case 127:
-            case '\0':
-                (*out_buf)[total_read--] = '\0';
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    }
-
-    if(waitpid(pid, &child_status, 0) == -1) {
-        bbox_perror("bbox_run_command_capture",
-                "unable to retrieve child exit status: %s.\n",
-                strerror(errno));
-        return -1;
-    }
-
-    return WEXITSTATUS(child_status);
 }
 
 void bbox_update_chroot_dynamic_config(const char *sys_root,
@@ -1042,28 +926,68 @@ cleanup_and_exit:
     return rval;
 }
 
-int bbox_mkdir_p(const char *module, const char *path)
+/*
+ * mkdir -p, done here rather than by spawning mkdir(1): a setuid binary has
+ * no business searching the caller's PATH for a helper, and a minimal
+ * chroot has no mkdir to find. Returns -1 with errno set and no message,
+ * so callers can decide how loudly to report.
+ */
+static int bbox_mkdir_p_quiet(const char *path)
 {
-    char *out_buf = NULL;
-    size_t out_buf_len = 0;
-    char * const argv[] = {"mkdir", "-p", (char*) path, NULL};
+    char *buf = NULL;
+    char *p = NULL;
+    struct stat st;
+    int rval = -1;
 
-    int rval = bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,
-            &out_buf_len);
-
-    if(rval != 0) {
-        if(out_buf) {
-            bbox_perror(
-                module, "failed to create directory %s: \"%s\".\n",
-                path, out_buf
-            );
-        }
-
-        rval = -1;
+    if((buf = strdup(path)) == NULL) {
+        bbox_perror("bbox_mkdir_p", "out of memory?\n");
+        abort();
     }
 
-    free(out_buf);
+    /*
+     * Create each leading component in turn, then the path itself. An
+     * existing directory is fine; anything else in the way is an error.
+     */
+    for(p = buf + 1; ; p++) {
+        if(*p != '/' && *p != '\0')
+            continue;
+
+        char saved = *p;
+        *p = '\0';
+
+        if(mkdir(buf, 0777) == -1) {
+            if(errno != EEXIST || stat(buf, &st) == -1 || !S_ISDIR(st.st_mode))
+            {
+                if(errno == EEXIST)
+                    errno = ENOTDIR;
+                *p = saved;
+                goto cleanup_and_exit;
+            }
+        }
+
+        *p = saved;
+
+        if(saved == '\0')
+            break;
+    }
+
+    rval = 0;
+
+cleanup_and_exit:
+
+    free(buf);
     return rval;
+}
+
+int bbox_mkdir_p(const char *module, const char *path)
+{
+    if(bbox_mkdir_p_quiet(path) == -1) {
+        bbox_perror(module, "failed to create directory '%s': %s.\n", path,
+                strerror(errno));
+        return -1;
+    }
+
+    return 0;
 }
 
 int bbox_sysroot_mkdir_p(const char *module, const char *sys_root,
@@ -1084,8 +1008,6 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
 {
     int rval = 0;
     struct stat link_st;
-    char *out_buf = NULL;
-    size_t out_buf_len = 0;
 
     if(lstat("/.pkg-cache", &link_st) == -1) {
         if(chroot_home) {
@@ -1117,28 +1039,16 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
 
     buf[nbytes] = '\0';
 
-    char * const argv[] = {"mkdir", "-p", (char*const) buf, NULL};
-    if(bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,
-            &out_buf_len) != 0)
-    {
-        if(out_buf && out_buf[0]) {
-            bbox_pwarning(
-                module,
-                "failed to create package cache directory '%s': %s\n",
-                buf, out_buf
-            );
-        } else {
-            bbox_pwarning(
-                module, "failed to create package cache directory '%s'.\n",
-                buf
-            );
-        }
+    if(bbox_mkdir_p_quiet(buf) == -1) {
+        bbox_pwarning(
+            module, "failed to create package cache directory '%s': %s.\n",
+            buf, strerror(errno)
+        );
     }
 
 cleanup_and_exit:
 
     free(buf);
-    free(out_buf);
     return rval;
 }
 

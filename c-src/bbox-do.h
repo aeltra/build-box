@@ -81,8 +81,6 @@ void bbox_pwarning(const char *lead, const char *msg, ...);
 int bbox_login_sh_chrooted(char *sys_root, char *home_dir);
 int bbox_runas_user_chrooted(const char *sys_root, int argc,
         char * const argv[], const bbox_conf_t *conf);
-int bbox_run_command_capture(uid_t uid, const char *cmd, char * const argv[],
-        char **out_buf, size_t *out_buf_size);
 void bbox_update_chroot_dynamic_config(const char *sys_root,
         const bbox_conf_t *conf);
 void bbox_sanitize_environment();
