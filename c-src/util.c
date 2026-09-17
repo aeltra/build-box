@@ -923,7 +923,7 @@ int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
     return fd;
 }
 
-static long bbox_fd_mount_id(const char *module, int fd)
+long bbox_fd_mount_id(const char *module, int fd)
 {
     char path[64];
     char line[128];
@@ -1118,6 +1118,21 @@ success:
 failure:
     free(user_dir);
     return NULL;
+}
+
+int bbox_validate_entry_name(const char *module, const char *name)
+{
+    /*
+     * Mount points are addressed as a single path component relative to a
+     * verified parent directory. A name containing a slash would introduce
+     * additional lookups that cannot be pinned down.
+     */
+    if(name[0] == '\0' || strchr(name, '/') != NULL) {
+        bbox_perror(module, "invalid mount point name '%s'.\n", name);
+        return -1;
+    }
+
+    return 0;
 }
 
 int validate_target_name(const char *module, const char *target_name)

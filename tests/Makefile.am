@@ -3,11 +3,11 @@ AM_CPPFLAGS = \
     -I$(top_srcdir)/c-src \
     -I$(srcdir)
 
-# Unit tests run as tests; umountdrv is a harness the shell tests drive,
-# so it is built but never run on its own.
+# Unit tests run as tests; umountdrv and mountdrv are harnesses the shell
+# tests drive, so they are built but never run on their own.
 unit_tests = test_path_join
 
-check_PROGRAMS = $(unit_tests) umountdrv
+check_PROGRAMS = $(unit_tests) umountdrv mountdrv
 
 noinst_HEADERS = test.h
 
@@ -35,9 +35,20 @@ umountdrv_SOURCES = \
     $(top_srcdir)/c-src/config.c
 umountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 
+# The same for bbox_mount_bind() and bbox_mount_special(), driven by
+# test_mount.sh.
+mountdrv_SOURCES = \
+    mountdrv.c \
+    $(top_srcdir)/c-src/mount.c \
+    $(top_srcdir)/c-src/umount.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
+
 # Shell tests skip themselves (exit 77) when what they need is missing:
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
+    test_mount.sh \
     test_umount_unbind.sh
 
 EXTRA_DIST = bboxlib.sh
@@ -50,6 +61,7 @@ SH_LOG_COMPILER = $(SHELL)
 
 AM_TESTS_ENVIRONMENT = \
     srcdir='$(abs_srcdir)'; export srcdir; \
-    UMOUNTDRV='$(abs_builddir)/umountdrv'; export UMOUNTDRV;
+    UMOUNTDRV='$(abs_builddir)/umountdrv'; export UMOUNTDRV; \
+    MOUNTDRV='$(abs_builddir)/mountdrv'; export MOUNTDRV;
 
 TESTS = $(unit_tests) $(dist_check_SCRIPTS)

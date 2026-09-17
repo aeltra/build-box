@@ -25,11 +25,14 @@ require_harness() {
     [ -n "$_h" ] && [ -x "$_h" ] || skip "$1 is not built; run make check"
 }
 
-# Skip unless an unprivileged user namespace with its own mount and PID
-# namespace can be created.  Package builds in a locked-down chroot
-# cannot, and the suite must not go red over it.
+# Skip unless an unprivileged user namespace with its own mount, PID and
+# network namespace can be created.  Package builds in a locked-down
+# chroot cannot, and the suite must not go red over it.
+#
+# The network namespace is there for sysfs: the kernel only lets a user
+# namespace mount sysfs when it owns the network namespace as well.
 require_userns() {
-    unshare -Urmpf --mount-proc=/proc true 2>/dev/null \
+    unshare -Urmpfn --mount-proc=/proc true 2>/dev/null \
         || skip "user namespaces are not available"
 }
 
@@ -51,7 +54,7 @@ enter_userns() {
     require_userns
     BBOX_TEST_INNER=1 export BBOX_TEST_INNER
     BBOX_TEST_OUTER_UID=$(id -u) export BBOX_TEST_OUTER_UID
-    exec unshare -Urmpf --mount-proc=/proc sh "$0" "$@"
+    exec unshare -Urmpfn --mount-proc=/proc sh "$0" "$@"
 }
 
 # mounted <dir> - true if something is mounted on the directory.

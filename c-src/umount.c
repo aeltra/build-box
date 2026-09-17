@@ -140,15 +140,8 @@ int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
     int is_mounted = 0;
     int rval = -1;
 
-    /*
-     * The mount point is addressed as a single path component relative to
-     * its parent directory. A name containing a slash would introduce
-     * additional lookups that we cannot pin down.
-     */
-    if(name[0] == '\0' || strchr(name, '/') != NULL) {
-        bbox_perror("umount", "invalid mount point name '%s'.\n", name);
+    if(bbox_validate_entry_name("umount", name) == -1)
         return -1;
-    }
 
     bbox_path_join(&parent, sys_root, parent_relpath, &parent_len);
 

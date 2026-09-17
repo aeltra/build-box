@@ -22,16 +22,19 @@
  * THE SOFTWARE.
  */
 
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
-#include <mntent.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -125,116 +128,260 @@ int bbox_mount_getopt(bbox_conf_t *conf, int argc, char * const argv[])
     return optind;
 }
 
-int bbox_mount_is_mounted(const char *path)
+/*
+ * Open the mount point <sys_root>/<parent_relpath>/<name> for mounting.
+ *
+ * The parent directory is verified through a file descriptor and the mount
+ * point is looked up relative to it, so that a symlink swapped in by the
+ * user between check and mount cannot redirect us elsewhere. Both the
+ * parent and the mount point must be owned by the invoking user.
+ *
+ * Returns 1 if something is already mounted there, 0 if the descriptors
+ * were filled in and the mount can proceed, -1 on error.
+ */
+static int bbox_mount_open_target(const char *sys_root,
+        const char *parent_relpath, const char *name, int *parent_fd_ptr,
+        int *dir_fd_ptr, char **target_ptr)
 {
-    struct mntent info;
-    size_t buf_len = 4096;
-    char *buf = NULL;
-    char *mount_point = NULL;
-    int rval = 0;
-    FILE *fp = NULL;
+    char *parent = NULL;
+    size_t parent_len = 0;
+    size_t target_len = 0;
+    struct stat st;
+    int parent_fd = -1;
+    int dir_fd = -1;
+    int is_mounted = 0;
+    int rval = -1;
 
-    /*
-     * Make sure we use the normalized path to compare against the entries in
-     * /proc/mounts.
-     */
-    if(!(mount_point = realpath(path, NULL))) {
-        bbox_perror("mount", "could not resolve '%s': '%s'.\n",
-                path, strerror(errno));
-        rval = -1;
+    uid_t uid = getuid();
+
+    if(bbox_validate_entry_name("mount", name) == -1)
+        return -1;
+
+    bbox_path_join(&parent, sys_root, parent_relpath, &parent_len);
+    bbox_path_join(target_ptr, parent, name, &target_len);
+
+    if((parent_fd = bbox_open_dir_owned_by("mount", parent, uid)) == -1)
+        goto cleanup_and_exit;
+
+    if((is_mounted = bbox_is_mount_point_at("mount", parent_fd, name)) == -1)
+        goto cleanup_and_exit;
+
+    if(is_mounted) {
+        rval = 1;
         goto cleanup_and_exit;
     }
 
-    if(!(fp = setmntent("/proc/mounts", "re"))) {
-        bbox_perror("mount", "failed to open /proc/mounts.\n");
-        rval = -1;
+    dir_fd = openat(parent_fd, name, O_PATH | O_DIRECTORY | O_NOFOLLOW);
+
+    if(dir_fd == -1) {
+        bbox_perror("mount", "could not open '%s': %s.\n", *target_ptr,
+                strerror(errno));
         goto cleanup_and_exit;
     }
 
-    if(!(buf = malloc(buf_len))) {
-        bbox_perror("mount", "out of memory?\n");
-        rval = -1;
+    if(fstat(dir_fd, &st) == -1) {
+        bbox_perror("mount", "could not stat '%s': %s.\n", *target_ptr,
+                strerror(errno));
         goto cleanup_and_exit;
     }
 
-    /*
-     * Loop over the entries in /proc/mounts and compare against the given
-     * directory.
-     */
-    while(1)
-    {
-        struct mntent *tmp_info = getmntent_r(fp, &info, buf, buf_len);
-
-        if(!tmp_info) {
-            if(errno == ERANGE) {
-                buf_len *= 2;
-                buf = realloc(buf, buf_len);
-                if(!buf) {
-                    bbox_perror("mount", "out of memory?\n");
-                    rval = -1;
-                    goto cleanup_and_exit;
-                }
-                continue;
-            }
-
-            break;
-        }
-
-        if(!strcmp(tmp_info->mnt_dir, mount_point)) {
-            rval = 1;
-            break;
-        }
+    if(st.st_uid != uid) {
+        bbox_perror("mount", "directory '%s' is not owned by user id '%ld'.\n",
+                *target_ptr, (long) uid);
+        goto cleanup_and_exit;
     }
+
+    *parent_fd_ptr = parent_fd;
+    *dir_fd_ptr = dir_fd;
+    parent_fd = -1;
+    dir_fd = -1;
+    rval = 0;
 
 cleanup_and_exit:
 
-    if(fp)
-        endmntent(fp);
-    free(mount_point);
-    free(buf);
-
+    if(dir_fd != -1)
+        close(dir_fd);
+    if(parent_fd != -1)
+        close(parent_fd);
+    free(parent);
     return rval;
 }
 
-int bbox_mount_special(const char *sys_root, const char *filesystemtype)
+/*
+ * The per-mount flags currently in effect on the mount an open descriptor
+ * refers to, in the form mount(2) takes them.
+ *
+ * A bind remount replaces the whole flag set with what it is given. To add
+ * a restriction without dropping the ones the source already had -- "ro" or
+ * "nodev" on a home partition, say -- the current flags have to be carried
+ * over. Inside a user namespace the kernel insists on it.
+ */
+static int bbox_mount_current_flags(const char *target, int fd,
+        unsigned long *flags_ptr)
 {
-    char *mount_point = NULL;
+    struct statvfs vfs;
+    unsigned long flags = 0;
+
+    if(fstatvfs(fd, &vfs) == -1) {
+        bbox_perror("mount", "could not read mount flags of '%s': %s.\n",
+                target, strerror(errno));
+        return -1;
+    }
+
+    if(vfs.f_flag & ST_RDONLY)
+        flags |= MS_RDONLY;
+    if(vfs.f_flag & ST_NOSUID)
+        flags |= MS_NOSUID;
+    if(vfs.f_flag & ST_NODEV)
+        flags |= MS_NODEV;
+    if(vfs.f_flag & ST_NOEXEC)
+        flags |= MS_NOEXEC;
+    if(vfs.f_flag & ST_SYNCHRONOUS)
+        flags |= MS_SYNCHRONOUS;
+    if(vfs.f_flag & ST_MANDLOCK)
+        flags |= MS_MANDLOCK;
+    if(vfs.f_flag & ST_NODIRATIME)
+        flags |= MS_NODIRATIME;
+#ifdef ST_NOSYMFOLLOW
+    if(vfs.f_flag & ST_NOSYMFOLLOW)
+        flags |= MS_NOSYMFOLLOW;
+#endif
+
+    /*
+     * Without an atime flag mount(2) defaults to relatime, so strict atime
+     * has to be asked for explicitly to be preserved.
+     */
+    if(vfs.f_flag & ST_NOATIME)
+        flags |= MS_NOATIME;
+    else if(vfs.f_flag & ST_RELATIME)
+        flags |= MS_RELATIME;
+    else
+        flags |= MS_STRICTATIME;
+
+    *flags_ptr = flags;
+    return 0;
+}
+
+/*
+ * Apply propagation and mount flags to the mount that was just created on
+ * <name> below the parent. Must be called with privileges raised.
+ *
+ * The new mount is re-opened relative to the verified parent and addressed
+ * through that descriptor, so the follow-up mount calls act on exactly the
+ * mount we made and nothing else. Bind mounts inherit the source mount's
+ * flags, so a remount is the only way to add restrictions like MS_NOSUID,
+ * and the inherited flags are kept. If that remount fails, the mount is
+ * taken down again rather than left in place without the restrictions that
+ * were asked for.
+ */
+static int bbox_mount_finish(const char *target, int parent_fd,
+        const char *name, int dir_fd, unsigned long remount_flags)
+{
+    char mnt_path[64];
+    char undo_path[64 + NAME_MAX];
+    long dir_mount_id = -1;
+    long mnt_mount_id = -1;
+    int mnt_fd = -1;
+    int rval = -1;
+
+    mnt_fd = openat(parent_fd, name, O_PATH | O_DIRECTORY | O_NOFOLLOW);
+
+    if(mnt_fd == -1) {
+        bbox_perror("mount", "could not re-open '%s' after mounting: %s.\n",
+                target, strerror(errno));
+        return -1;
+    }
+
+    if((dir_mount_id = bbox_fd_mount_id("mount", dir_fd)) == -1)
+        goto cleanup_and_exit;
+    if((mnt_mount_id = bbox_fd_mount_id("mount", mnt_fd)) == -1)
+        goto cleanup_and_exit;
+
+    if(dir_mount_id == mnt_mount_id) {
+        bbox_perror("mount", "no mount appeared on '%s'.\n", target);
+        goto cleanup_and_exit;
+    }
+
+    snprintf(mnt_path, sizeof(mnt_path), "/proc/self/fd/%d", mnt_fd);
+
+    if(mount(NULL, mnt_path, NULL, MS_PRIVATE, NULL) != 0) {
+        bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
+                target, strerror(errno));
+        /* Continue anyway. */
+    }
+
+    if(remount_flags) {
+        unsigned long current_flags = 0;
+        int failed = 0;
+
+        if(bbox_mount_current_flags(target, mnt_fd, &current_flags) == -1) {
+            failed = 1;
+        }
+        else if(mount(NULL, mnt_path, NULL,
+                    MS_BIND | MS_REMOUNT | current_flags | remount_flags,
+                    NULL) != 0)
+        {
+            bbox_perror("mount",
+                    "failed to remount %s with restricted flags: %s.\n",
+                    target, strerror(errno));
+            failed = 1;
+        }
+
+        if(failed) {
+            /*
+             * Undo the mount. The descriptor to it must be closed first, or
+             * the unmount fails with EBUSY. The parent descriptor remains
+             * open, so the single name below it is still unambiguous.
+             */
+            close(mnt_fd);
+            mnt_fd = -1;
+
+            if(snprintf(undo_path, sizeof(undo_path), "/proc/self/fd/%d/%s",
+                    parent_fd, name) < (int) sizeof(undo_path))
+            {
+                (void) umount2(undo_path, UMOUNT_NOFOLLOW);
+            }
+
+            goto cleanup_and_exit;
+        }
+    }
+
+    rval = 0;
+
+cleanup_and_exit:
+
+    if(mnt_fd != -1)
+        close(mnt_fd);
+    return rval;
+}
+
+int bbox_mount_special(const char *sys_root, const char *parent_relpath,
+        const char *name, const char *filesystemtype)
+{
     char *target = NULL;
-    size_t buf_len = 0;
     char fd_path[64];
+    int parent_fd = -1;
     int dir_fd = -1;
+    int rval = -1;
 
-    int is_mounted = 0;
-
-    if(!strcmp(filesystemtype, "proc")) {
-        mount_point = "proc";
-    } else if (!strcmp(filesystemtype, "sysfs")) {
-        mount_point = "sys";
-    } else {
+    if(strcmp(filesystemtype, "proc") != 0 &&
+            strcmp(filesystemtype, "sysfs") != 0)
+    {
         bbox_perror("mount", "unsupported special filesystem: %s\n",
             filesystemtype);
         return -1;
     }
 
-    bbox_path_join(&target, sys_root, mount_point, &buf_len);
-
-    if((is_mounted = bbox_mount_is_mounted(target)) == -1) {
-        free(target);
-        return -1;
-    }
-
-    if(is_mounted) {
-        free(target);
-        return 0;
-    }
-
-    /*
-     * Open the target directory and verify ownership via the file descriptor
-     * to eliminate the TOCTOU window between the ownership check and mount.
-     */
-    if((dir_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
-        free(target);
-        return -1;
+    switch(bbox_mount_open_target(sys_root, parent_relpath, name, &parent_fd,
+                &dir_fd, &target))
+    {
+        case 1:
+            rval = 0;
+            goto cleanup_and_exit;
+        case -1:
+            goto cleanup_and_exit;
+        default:
+            break;
     }
 
     snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
@@ -243,26 +390,18 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
-    if(bbox_raise_privileges() == -1) {
-        close(dir_fd);
-        free(target);
-        return -1;
-    }
-
-    int rval = 0;
+    if(bbox_raise_privileges() == -1)
+        goto cleanup_and_exit;
 
     if(mount(NULL, fd_path, filesystemtype,
                 MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));
-        rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(bbox_mount_finish(target, parent_fd, name, dir_fd, 0) == 0)
     {
-        bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
-                target, strerror(errno));
-        /* Continue anyway. */
+        rval = 0;
     }
 
     /*
@@ -271,86 +410,71 @@ int bbox_mount_special(const char *sys_root, const char *filesystemtype)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
-    close(dir_fd);
+cleanup_and_exit:
+
+    if(dir_fd != -1)
+        close(dir_fd);
+    if(parent_fd != -1)
+        close(parent_fd);
     free(target);
     return rval;
 }
 
 int bbox_mount_bind(const char *sys_root, const char *source,
-        const char *target_relpath, int recursive,
+        const char *parent_relpath, const char *name, int recursive,
         unsigned long remount_flags)
 {
     char *target = NULL;
-    size_t buf_len = 0;
     char fd_path[64];
+    char source_path[64];
+    int parent_fd = -1;
     int dir_fd = -1;
-    int is_mounted = 0;
+    int source_fd = -1;
+    int rval = -1;
 
-    const char *relpath = target_relpath ? target_relpath : source;
-    bbox_path_join(&target, sys_root, relpath, &buf_len);
-
-    if((is_mounted = bbox_mount_is_mounted(target)) == -1) {
-        free(target);
-        return -1;
-    }
-
-    if(is_mounted) {
-        free(target);
-        return 0;
+    switch(bbox_mount_open_target(sys_root, parent_relpath, name, &parent_fd,
+                &dir_fd, &target))
+    {
+        case 1:
+            rval = 0;
+            goto cleanup_and_exit;
+        case -1:
+            goto cleanup_and_exit;
+        default:
+            break;
     }
 
     /*
-     * Open the target directory and verify ownership via the file descriptor
-     * to eliminate the TOCTOU window between the ownership check and mount.
+     * Resolve the source while privileges are still lowered and hand root
+     * the descriptor, so that root never walks a path on the user's behalf.
      */
-    if((dir_fd = bbox_open_dir_owned_by("mount", target, getuid())) == -1) {
-        free(target);
-        return -1;
+    if((source_fd = open(source, O_PATH | O_DIRECTORY)) == -1) {
+        bbox_perror("mount", "could not open '%s': %s.\n", source,
+                strerror(errno));
+        goto cleanup_and_exit;
     }
 
     snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
+    snprintf(source_path, sizeof(source_path), "/proc/self/fd/%d", source_fd);
 
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
-    if(bbox_raise_privileges() == -1) {
-        close(dir_fd);
-        free(target);
-        return -1;
-    }
-
-    int rval = 0;
+    if(bbox_raise_privileges() == -1)
+        goto cleanup_and_exit;
 
     unsigned long mountflags = MS_BIND | (recursive ? MS_REC : 0);
 
-    if(mount(source, fd_path, NULL, mountflags, NULL) != 0)
+    if(mount(source_path, fd_path, NULL, mountflags, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 source, target, strerror(errno));
-        rval = -1;
     }
-    else if(mount(NULL, target, NULL, MS_PRIVATE, NULL) != 0)
+    else if(bbox_mount_finish(target, parent_fd, name, dir_fd,
+                remount_flags) == 0)
     {
-        bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
-                target, strerror(errno));
-        /* Continue anyway. */
-    }
-
-    /*
-     * If additional mount flags were requested, apply them via a remount.
-     * Bind mounts inherit the source mount's flags, so a remount is the
-     * only way to add restrictions like MS_NOSUID or MS_NOEXEC.
-     */
-    if(rval == 0 && remount_flags) {
-        if(mount(NULL, target, NULL,
-                    MS_BIND | MS_REMOUNT | remount_flags, NULL) != 0)
-        {
-            bbox_perror("mount",
-                    "failed to remount %s with restricted flags: %s.\n",
-                    target, strerror(errno));
-            /* Continue anyway. */
-        }
+        rval = 0;
     }
 
     /*
@@ -359,7 +483,14 @@ int bbox_mount_bind(const char *sys_root, const char *source,
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
-    close(dir_fd);
+cleanup_and_exit:
+
+    if(source_fd != -1)
+        close(source_fd);
+    if(dir_fd != -1)
+        close(dir_fd);
+    if(parent_fd != -1)
+        close(parent_fd);
     free(target);
     return rval;
 }
@@ -374,31 +505,30 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         return -1;
 
     if(bbox_config_get_mount_dev(conf)) {
-        if(bbox_mount_bind(sys_root, "/dev", NULL, 0,
+        if(bbox_mount_bind(sys_root, "/dev", "", "dev", 0,
                     MS_NOSUID | MS_NOEXEC) < 0)
             return -1;
     }
 
     if(bbox_config_get_mount_proc(conf)) {
-        if(bbox_mount_special(sys_root, "proc") < 0)
+        if(bbox_mount_special(sys_root, "", "proc", "proc") < 0)
             return -1;
     }
 
     if(bbox_config_get_mount_sys(conf)) {
-        if(bbox_mount_special(sys_root, "sysfs") < 0)
+        if(bbox_mount_special(sys_root, "", "sys", "sysfs") < 0)
             return -1;
     }
 
     /*
-     * Mounting the home directory requires extra pre-caution. The source path
-     * has already been normalized and checked for ownership, so we should be
-     * fine calling `bbox_mount_bind`, which in turn checks the target directory
-     * before executing the mount.
-     *
      * Each target gets its own, isolated home directory at
      * {sysroot}/home/{username}. The user's real home is bind-mounted onto
      * {sysroot}/home/{username}/RealHome so that the user's source files
      * remain accessible while dotfiles are kept per-target.
+     *
+     * The source path has been normalized and checked for ownership when the
+     * configuration was created. `bbox_mount_bind` checks the parent and the
+     * mount point before executing the mount.
      */
     if(bbox_config_get_mount_home(conf)) {
         const char *homedir = bbox_config_get_home_dir(conf);
@@ -425,17 +555,11 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
             return -1;
         }
 
-        /*
-         * Bind-mount the user's real home directory onto the RealHome mount
-         * point. This internally checks ownership of the target directory.
-         */
-        if(bbox_mount_bind(sys_root, homedir, realhome_relpath, 0,
-                    MS_NOSUID | MS_NODEV) < 0) {
-            free(realhome_relpath);
-            return -1;
-        }
-
         free(realhome_relpath);
+
+        if(bbox_mount_bind(sys_root, homedir, chroot_home, "RealHome", 0,
+                    MS_NOSUID | MS_NODEV) < 0)
+            return -1;
     }
 
     return 0;
