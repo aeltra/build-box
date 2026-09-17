@@ -271,14 +271,23 @@ void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
 {
     size_t base_len = strlen(base);
     size_t sub_len  = strlen(sub);
-    size_t req_buf_size = base_len + sub_len + 1;
+    size_t req_buf_size;
     int base_is_buffer = 0;
+    int need_sep = 0;
 
     if(base == *buf_ptr)
         base_is_buffer = 1;
 
-    if(base_len == 0 || base[base_len-1] != '/')
-        req_buf_size++;
+    while(sub[0] == '/') {
+        sub++;
+        sub_len--;
+    }
+
+    /* Only insert a separator if there is something to separate. */
+    if(sub_len > 0 && (base_len == 0 || base[base_len-1] != '/'))
+        need_sep = 1;
+
+    req_buf_size = base_len + need_sep + sub_len + 1;
 
     if(req_buf_size > *n_ptr)
     {
@@ -297,13 +306,8 @@ void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
 
     memmove((void*) *buf_ptr, base, base_len + 1);
 
-    if(base_len == 0 || base[base_len-1] != '/')
+    if(need_sep)
         (*buf_ptr)[base_len++] = '/';
-
-    while(sub[0] == '/') {
-        sub++;
-        sub_len--;
-    }
 
     memmove((void*) *buf_ptr + base_len, sub, sub_len + 1);
 }
@@ -919,6 +923,76 @@ int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
     return fd;
 }
 
+static long bbox_fd_mount_id(const char *module, int fd)
+{
+    char path[64];
+    char line[128];
+    long mount_id = -1;
+    FILE *fp = NULL;
+
+    /*
+     * The kernel reports the id of the mount an open descriptor refers to in
+     * /proc/self/fdinfo. This works with any libc, unlike statx(2), which
+     * older versions of musl do not provide.
+     */
+    snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", fd);
+
+    if(!(fp = fopen(path, "re"))) {
+        bbox_perror(
+            module, "could not open '%s': %s.\n", path, strerror(errno)
+        );
+        return -1;
+    }
+
+    while(fgets(line, sizeof(line), fp)) {
+        if(sscanf(line, "mnt_id: %ld", &mount_id) == 1)
+            break;
+    }
+
+    fclose(fp);
+
+    if(mount_id == -1)
+        bbox_perror(module, "kernel does not report mount ids.\n");
+
+    return mount_id;
+}
+
+int bbox_is_mount_point_at(const char *module, int dir_fd, const char *name)
+{
+    long parent_mount_id = -1;
+    long child_mount_id = -1;
+    int fd = -1;
+    int rval = -1;
+
+    /*
+     * Open the entry relative to the parent directory, without following
+     * symlinks, and compare the mount ids of both. They only differ if there
+     * is a mount on top of the entry.
+     */
+    if((fd = openat(dir_fd, name, O_PATH | O_DIRECTORY | O_NOFOLLOW)) == -1) {
+        bbox_perror(
+            module, "could not open '%s': %s.\n", name, strerror(errno)
+        );
+        return -1;
+    }
+
+    if((parent_mount_id = bbox_fd_mount_id(module, dir_fd)) == -1)
+        goto cleanup_and_exit;
+    if((child_mount_id = bbox_fd_mount_id(module, fd)) == -1)
+        goto cleanup_and_exit;
+
+    rval = parent_mount_id != child_mount_id;
+
+cleanup_and_exit:
+
+    /*
+     * The descriptor must not outlive this function. An open descriptor pins
+     * the mount and would make a subsequent unmount fail with EBUSY.
+     */
+    close(fd);
+    return rval;
+}
+
 int bbox_mkdir_p(const char *module, const char *path)
 {
     char *out_buf = NULL;
@@ -953,57 +1027,6 @@ int bbox_sysroot_mkdir_p(const char *module, const char *sys_root,
 
     int rval = bbox_mkdir_p(module, buf);
     free(buf);
-    return rval;
-}
-
-int bbox_is_subdir_of(const char *path, const char *subdir) 
-{
-    char *real_path = NULL;
-    char *real_subdir = NULL;
-    char *buf = NULL;
-    int rval = -1;
-
-    real_path = realpath(path, NULL);
-    if(!real_path) {
-        bbox_perror(
-            "bbox_is_subdir_of",
-            "unable to normalize path %s: %s.\n",
-            path, strerror(errno)
-        );
-        goto cleanup_and_exit;
-    }
-
-    real_subdir = realpath(subdir, NULL);
-    if(!real_subdir) {
-        bbox_perror(
-            "bbox_is_subdir_of",
-            "unable to normalize path %s: %s.\n",
-            subdir, strerror(errno)
-        );
-        goto cleanup_and_exit;
-    }
-
-    size_t buf_len = strlen(real_path) + 2;
-
-    if((buf = malloc(buf_len)) == NULL) {
-        bbox_perror("bbox_is_subdir_of", "out of memory!\n");
-        abort();
-    }
-
-    strncpy(buf, real_path, buf_len);
-
-    buf[buf_len - 1] = '\0';
-    buf[buf_len - 2] = '/';
-
-    if(strncmp(buf, real_subdir, buf_len - 1) == 0)
-        rval = 0;
-
-cleanup_and_exit:
-
-    free(real_path);
-    free(real_subdir);
-    free(buf);
-
     return rval;
 }
 

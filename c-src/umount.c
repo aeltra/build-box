@@ -22,10 +22,13 @@
  * THE SOFTWARE.
  */
 
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
 #include <mntent.h>
@@ -126,55 +129,87 @@ int bbox_umount_getopt(bbox_conf_t *conf, int argc, char * const argv[])
     return optind;
 }
 
-int bbox_umount_unbind(const char *sys_root, const char *mount_point)
+int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
+        const char *name)
 {
-    char *buf = NULL;
-    size_t buf_len = 0;
+    char *parent = NULL;
+    size_t parent_len = 0;
+    char fd_path[64 + NAME_MAX];
     struct stat st;
+    int parent_fd = -1;
     int is_mounted = 0;
+    int rval = -1;
 
-    bbox_path_join(&buf, sys_root, mount_point, &buf_len);
-
-    if(lstat(buf, &st) == -1) {
-        if(errno == ENOENT) {
-            free(buf);
-            return 0;
-        }
-        bbox_perror("umount", "could not stat '%s': %s.\n", buf,
-                strerror(errno));
-        free(buf);
+    /*
+     * The mount point is addressed as a single path component relative to
+     * its parent directory. A name containing a slash would introduce
+     * additional lookups that we cannot pin down.
+     */
+    if(name[0] == '\0' || strchr(name, '/') != NULL) {
+        bbox_perror("umount", "invalid mount point name '%s'.\n", name);
         return -1;
+    }
+
+    bbox_path_join(&parent, sys_root, parent_relpath, &parent_len);
+
+    /* If the parent directory does not exist, there is nothing to unmount. */
+    if(lstat(parent, &st) == -1 && errno == ENOENT) {
+        rval = 0;
+        goto cleanup_and_exit;
+    }
+
+    /*
+     * The parent is verified through a file descriptor and the mount point
+     * is looked up relative to it, so that a symlink swapped in by the user
+     * between check and unmount cannot redirect us to a mount elsewhere on
+     * the system.
+     */
+    if((parent_fd = bbox_open_dir_owned_by("umount", parent, getuid())) == -1)
+        goto cleanup_and_exit;
+
+    if(fstatat(parent_fd, name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
+        if(errno == ENOENT) {
+            rval = 0;
+            goto cleanup_and_exit;
+        }
+        bbox_perror("umount", "could not stat '%s/%s': %s.\n", parent, name,
+                strerror(errno));
+        goto cleanup_and_exit;
     }
 
     if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
-        bbox_perror("umount", "%s is not a directory.\n", buf);
-        free(buf);
-        return -1;
+        bbox_perror("umount", "%s/%s is not a directory.\n", parent, name);
+        goto cleanup_and_exit;
     }
 
-    if(bbox_is_subdir_of(sys_root, buf) != 0) {
-        bbox_perror("umount", "%s is not a subdirectory of %s.\n",
-                buf, sys_root);
-        free(buf);
-        return -1;
+    if((is_mounted = bbox_is_mount_point_at("umount", parent_fd, name)) == -1)
+        goto cleanup_and_exit;
+
+    if(!is_mounted) {
+        rval = 0;
+        goto cleanup_and_exit;
     }
 
-    is_mounted = bbox_mount_is_mounted(buf);
-
-    if(is_mounted <= 0) {
-        free(buf);
-        return 0;
+    /*
+     * Go through the descriptor of the verified parent. A mount point cannot
+     * be renamed and UMOUNT_NOFOLLOW refuses symlinks, so the single path
+     * component behind it can only ever resolve to a mount directly below
+     * the parent.
+     */
+    if(snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/%s", parent_fd,
+            name) >= (int) sizeof(fd_path))
+    {
+        bbox_perror("umount", "mount point name '%s' is too long.\n", name);
+        goto cleanup_and_exit;
     }
 
-    int rval = 0;
+    if(bbox_raise_privileges() == -1)
+        goto cleanup_and_exit;
 
-    if(bbox_raise_privileges() == -1) {
-        free(buf);
-        return -1;
-    }
+    rval = 0;
 
-    if(umount(buf) != 0) {
-        bbox_perror("umount", "failed to unmount %s: %s\n", buf,
+    if(umount2(fd_path, UMOUNT_NOFOLLOW) != 0) {
+        bbox_perror("umount", "failed to unmount %s/%s: %s\n", parent, name,
                 strerror(errno));
         rval = -1;
     }
@@ -182,16 +217,16 @@ int bbox_umount_unbind(const char *sys_root, const char *mount_point)
     if(bbox_lower_privileges() == -1)
         rval = -1;
 
-    free(buf);
+cleanup_and_exit:
+
+    if(parent_fd != -1)
+        close(parent_fd);
+    free(parent);
     return rval;
 }
 
 int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
 {
-    struct stat st;
-    char *buf = NULL;
-    size_t buf_len = 0;
-
     uid_t uid = getuid();
 
     /*
@@ -202,85 +237,30 @@ int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
         return -1;
 
     if(!bbox_config_get_mount_dev(conf)) {
-        if(bbox_umount_unbind(sys_root, "/dev") < 0)
+        if(bbox_umount_unbind(sys_root, "", "dev") < 0)
             return -1;
     }
     if(!bbox_config_get_mount_proc(conf)) {
-        if(bbox_umount_unbind(sys_root, "/proc") < 0)
+        if(bbox_umount_unbind(sys_root, "", "proc") < 0)
             return -1;
     }
     if(!bbox_config_get_mount_sys(conf)) {
-        if(bbox_umount_unbind(sys_root, "/sys") < 0)
+        if(bbox_umount_unbind(sys_root, "", "sys") < 0)
             return -1;
     }
 
     /*
-     * Unmounting the user's home directory requires extra precaution.
      * The real home is bind-mounted at {chroot_home}/RealHome inside the
-     * sysroot.
+     * sysroot. `bbox_umount_unbind` verifies that {chroot_home} belongs to
+     * the user who executed build box before unmounting anything below it.
      */
     if(!bbox_config_get_mount_home(conf)) {
         const char *chroot_home = bbox_config_get_chroot_home_dir(conf);
 
-        char *realhome_relpath = NULL;
-        size_t rh_buf_len = 0;
-
-        bbox_path_join(&realhome_relpath, chroot_home, "RealHome",
-                &rh_buf_len);
-
-        bbox_path_join(&buf, sys_root, realhome_relpath, &buf_len);
-
-        /*
-         * We must be able to stat the bind-mounted home directory...
-         */
-        if(lstat(buf, &st) == -1) {
-            /* ...unless it doesn't exist. */
-            if(errno == ENOENT) {
-                free(realhome_relpath);
-                free(buf);
-                return 0;
-            }
-            bbox_perror("umount", "could not stat '%s': %s.\n", buf,
-                    strerror(errno));
-            free(realhome_relpath);
-            free(buf);
+        if(bbox_umount_unbind(sys_root, chroot_home, "RealHome") < 0)
             return -1;
-        }
-
-        /*
-         * It has to be a directory.
-         */
-        if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
-            bbox_perror("umount", "%s is not a directory.\n", buf);
-            free(realhome_relpath);
-            free(buf);
-            return -1;
-        }
-
-        /*
-         * And it must belong to the user who executed build box.
-         */
-        if(st.st_uid != uid) {
-            bbox_perror(
-                "umount",
-                "directory '%s' is not owned by user id '%ld'.\n",
-                buf, (long) uid
-            );
-            free(realhome_relpath);
-            free(buf);
-            return -1;
-        }
-
-        if(bbox_umount_unbind(sys_root, realhome_relpath) < 0) {
-            free(realhome_relpath);
-            free(buf);
-            return -1;
-        }
-
-        free(realhome_relpath);
     }
 
-    free(buf);
     return 0;
 }
 

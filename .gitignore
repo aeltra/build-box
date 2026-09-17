@@ -27,3 +27,12 @@ __pycache__
 /VERSION
 /dist/
 /missing
+/test-driver
+
+# Everything built in tests/ is a compiled binary or a harness log with no
+# extension worth listing, so ignore the directory and whitelist the sources.
+/tests/*
+!/tests/*.am
+!/tests/*.c
+!/tests/*.h
+!/tests/*.sh

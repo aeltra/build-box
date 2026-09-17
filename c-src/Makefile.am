@@ -7,3 +7,4 @@ build_box_do_SOURCES = bbox-do.c\
     run.c\
     umount.c\
     util.c
+noinst_HEADERS = bbox-do.h

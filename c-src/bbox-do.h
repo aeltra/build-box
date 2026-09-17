@@ -93,10 +93,10 @@ int bbox_reset_supplementary_groups();
 int bbox_check_user_in_group_build_box();
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid);
 int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid);
+int bbox_is_mount_point_at(const char *module, int dir_fd, const char *name);
 int bbox_mkdir_p(const char *module, const char *path);
 int bbox_sysroot_mkdir_p(const char *module, const char *sysroot,
         const char *path);
-int bbox_is_subdir_of(const char *path, const char *subdir);
 int bbox_try_fix_pkg_cache_symlink(const char *module,
         const char *chroot_home);
 
@@ -107,6 +107,8 @@ int validate_target_name(const char *module, const char *target_name);
 
 int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root);
 int bbox_mount_is_mounted(const char *path);
+int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
+        const char *name);
 
 /* Setup */
 

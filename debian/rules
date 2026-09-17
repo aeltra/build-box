@@ -21,6 +21,14 @@ override_dh_auto_build:
 	(cd .build && make)
 	dh_auto_build
 
+# The suite runs as part of the package build, so a regression is a build
+# failure and not something that has to be remembered.  nocheck skips it.
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	(cd .build && make check VERBOSE=1)
+endif
+	dh_auto_test
+
 override_dh_auto_install:
 	(cd .build && install -m 0755 c-src/build-box-do ../bin)
 
@@ -37,7 +45,8 @@ override_dh_auto_install:
 override_dh_clean:
 	dh_auto_clean
 	rm -f bin/build-box-do Makefile.in aclocal.m4 c-src/Makefile.in compile \
-		config.h.in configure depcomp install-sh missing
+		config.h.in configure depcomp install-sh missing test-driver \
+		tests/Makefile.in
 	rm -fr .build lib/build_box_utils.egg-info
 	rm -f VERSION
 	dh_clean
