@@ -28,6 +28,7 @@
 #include <stdio.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <sched.h>
 #include <signal.h>
@@ -152,6 +153,48 @@ int bbox_run_getopt(bbox_conf_t *conf, int argc, char * const argv[])
     return optind;
 }
 
+/*
+ * Mount the session's own proc on the sysroot's proc directory. The
+ * sysroot is the working directory and has been verified to be the
+ * caller's. The entry is opened relative to it and must not be a symlink:
+ * the tree is the user's, and root must not walk a path through it.
+ *
+ * Whatever is mounted on the entry already -- the proc of a plain session
+ * -- is stacked on, and that is required anyway: a proc instance shows the
+ * PID namespace of the process that mounted it, so the existing one shows
+ * the host's and only a mount made by the child shows the session's. The
+ * mount lives in the private namespace unshared above and vanishes with
+ * the session.
+ */
+static int bbox_mount_session_proc()
+{
+    char fd_path[64];
+    int fd = -1;
+    int rval = -1;
+
+    if((fd = open("proc", O_PATH | O_DIRECTORY | O_NOFOLLOW)) == -1) {
+        bbox_perror("bbox_runas_user_chrooted",
+                "could not open the sysroot's proc directory: %s\n",
+                strerror(errno));
+        return -1;
+    }
+
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+
+    if(mount(NULL, fd_path, "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC,
+                NULL) != 0)
+    {
+        bbox_perror("bbox_runas_user_chrooted",
+                "failed to mount /proc inside namespace: %s\n",
+                strerror(errno));
+    } else {
+        rval = 0;
+    }
+
+    close(fd);
+    return rval;
+}
+
 int bbox_runas_user_chrooted(const char *sys_root, int argc,
         char * const argv[], const bbox_conf_t *conf)
 {
@@ -199,7 +242,9 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
      * If isolation is requested, set up the namespaces while we still have
      * root privileges and before the chroot, because making the mounts
      * private needs the root of a mount and after the chroot "/" is the
-     * sysroot directory, which is not one.
+     * sysroot directory, which is not one. The child's proc mount happens
+     * before the chroot as well: it goes through /proc/self/fd, which has
+     * to be the host's proc.
      */
     if(bbox_config_get_isolation(conf)) {
         /*
@@ -229,18 +274,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
             bbox_lower_privileges();
             return BBOX_ERR_RUNTIME;
         }
-    }
 
-    /* now do actual chroot call. */
-    if(chroot(".") == -1) {
-        bbox_perror("bbox_runas_user_chrooted",
-                "chroot to system root failed: %s.\n",
-                strerror(errno));
-        bbox_lower_privileges();
-        return BBOX_ERR_RUNTIME;
-    }
-
-    if(bbox_config_get_isolation(conf)) {
         /* Note that we only fork and wait when isolation is requested. */
         if((pid = fork()) == -1) {
             bbox_perror("bbox_runas_user_chrooted", "fork failed: %s\n",
@@ -249,15 +283,30 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
             return BBOX_ERR_RUNTIME;
         }
 
+        /*
+         * The child is the first process in the new PID namespace, so only
+         * a proc it mounts itself shows that namespace.
+         */
         if(pid == 0 && bbox_config_get_mount_proc(conf)) {
-            if(mount(NULL, "/proc", "proc",
-                        MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0) {
-                bbox_perror("bbox_runas_user_chrooted",
-                        "failed to mount /proc inside namespace: %s\n",
-                        strerror(errno));
+            if(bbox_mount_session_proc() == -1)
                 _exit(BBOX_ERR_RUNTIME);
-            }
         }
+    }
+
+    /* now do actual chroot call. */
+    if(chroot(".") == -1) {
+        bbox_perror("bbox_runas_user_chrooted",
+                "chroot to system root failed: %s.\n",
+                strerror(errno));
+        bbox_lower_privileges();
+        if(pid > 0) {
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            return BBOX_ERR_RUNTIME;
+        }
+        if(bbox_config_get_isolation(conf))
+            _exit(BBOX_ERR_RUNTIME);
+        return BBOX_ERR_RUNTIME;
     }
 
     /*
