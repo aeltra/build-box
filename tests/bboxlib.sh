@@ -25,15 +25,38 @@ require_harness() {
     [ -n "$_h" ] && [ -x "$_h" ] || skip "$1 is not built; run make check"
 }
 
-# Skip unless an unprivileged user namespace with its own mount, PID and
-# network namespace can be created.  Package builds in a locked-down
-# chroot cannot, and the suite must not go red over it.
+# The unshare flags for the test sandbox: an unprivileged user namespace
+# with its own mount, PID and network namespace.  Prints nothing and
+# fails if none can be created -- package builds in a locked-down chroot
+# cannot, and the suite must not go red over it.
 #
 # The network namespace is there for sysfs: the kernel only lets a user
 # namespace mount sysfs when it owns the network namespace as well.
+#
+# --map-auto is preferred: it maps the caller's subordinate id ranges
+# through newuidmap/newgidmap, and a namespace set up that way is allowed
+# to call setgroups(), which build-box's run path does.  A plain -r
+# namespace has setgroups denied by the kernel.  Without subordinate ids
+# the plain form is used and tests needing setgroups skip themselves;
+# see require_setgroups.
+userns_flags() {
+    if unshare -Urmpfn --map-auto --mount-proc=/proc true 2>/dev/null; then
+        echo "-Urmpfn --map-auto --mount-proc=/proc"
+    elif unshare -Urmpfn --mount-proc=/proc true 2>/dev/null; then
+        echo "-Urmpfn --mount-proc=/proc"
+    else
+        return 1
+    fi
+}
+
 require_userns() {
-    unshare -Urmpfn --mount-proc=/proc true 2>/dev/null \
-        || skip "user namespaces are not available"
+    userns_flags >/dev/null || skip "user namespaces are not available"
+}
+
+# Inside the namespace: skip unless setgroups() is permitted.
+require_setgroups() {
+    [ "$(cat /proc/self/setgroups 2>/dev/null)" = allow ] \
+        || skip "setgroups is denied in this namespace; $(id -un) has no subordinate ids"
 }
 
 # Re-execute the calling script inside a user namespace, once.  Inside,
@@ -51,13 +74,34 @@ require_userns() {
 # namespace only by accident.
 enter_userns() {
     [ "${BBOX_TEST_INNER:-}" = 1 ] && return 0
-    require_userns
+    _flags=$(userns_flags) || skip "user namespaces are not available"
     BBOX_TEST_INNER=1 export BBOX_TEST_INNER
     BBOX_TEST_OUTER_UID=$(id -u) export BBOX_TEST_OUTER_UID
-    exec unshare -Urmpfn --mount-proc=/proc sh "$0" "$@"
+    exec unshare $_flags sh "$0" "$@"
 }
 
 # mounted <dir> - true if something is mounted on the directory.
 mounted() {
     mountpoint -q "$1"
+}
+
+# provision_shell <sysroot>
+#
+# Copy dash and the libraries it needs into the sysroot as /usr/bin/sh,
+# which is where build-box looks for a shell.  Returns non-zero if there
+# is no dash or a copy fails, so the caller can skip.
+provision_shell() {
+    _r=$1
+    _sh=$(command -v dash) || return 1
+
+    mkdir -p "$_r/usr/bin" || return 1
+    cp "$_sh" "$_r/usr/bin/sh" || return 1
+
+    for _lib in $(ldd "$_sh" 2>/dev/null | grep -o '/[^ ]*' | grep '\.so'); do
+        [ -e "$_lib" ] || continue
+        mkdir -p "$_r$(dirname "$_lib")" || return 1
+        cp "$_lib" "$_r$_lib" || return 1
+    done
+
+    return 0
 }

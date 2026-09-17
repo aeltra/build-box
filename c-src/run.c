@@ -245,9 +245,10 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
 
     /*
      * Permanently drop all privileges. After this point, root privileges
-     * cannot be recovered by any code path.
+     * cannot be recovered by any code path, and with no_new_privs set they
+     * cannot be regained through a setuid binary inside the chroot either.
      */
-    if(bbox_drop_privileges() == -1) {
+    if(bbox_drop_privileges() == -1 || bbox_no_new_privs() == -1) {
         bbox_perror("bbox_runas_user_chrooted",
                 "failed to permanently drop privileges.\n");
         if(pid > 0) {
@@ -296,7 +297,7 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
      */
 
     /* Do this while we're at the fs root. */
-    bbox_try_fix_pkg_cache_symlink("",
+    bbox_try_fix_pkg_cache_symlink("run",
             bbox_config_get_chroot_home_dir(conf));
 
     /* this is non-critical. */

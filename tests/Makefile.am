@@ -7,7 +7,7 @@ AM_CPPFLAGS = \
 # tests drive, so they are built but never run on their own.
 unit_tests = test_path_join
 
-check_PROGRAMS = $(unit_tests) umountdrv mountdrv
+check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv
 
 noinst_HEADERS = test.h
 
@@ -35,6 +35,17 @@ umountdrv_SOURCES = \
     $(top_srcdir)/c-src/config.c
 umountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 
+# The run path, driven by test_no_new_privs.sh.  run.c needs mount.c for
+# bbox_mount_any() and umount.c comes along for the mount helpers.
+rundrv_SOURCES = \
+    rundrv.c \
+    $(top_srcdir)/c-src/run.c \
+    $(top_srcdir)/c-src/mount.c \
+    $(top_srcdir)/c-src/umount.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+rundrv_CPPFLAGS = $(AM_CPPFLAGS)
+
 # The same for bbox_mount_bind() and bbox_mount_special(), driven by
 # test_mount.sh.
 mountdrv_SOURCES = \
@@ -49,6 +60,7 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
     test_mount.sh \
+    test_no_new_privs.sh \
     test_umount_unbind.sh
 
 EXTRA_DIST = bboxlib.sh
@@ -62,6 +74,7 @@ SH_LOG_COMPILER = $(SHELL)
 AM_TESTS_ENVIRONMENT = \
     srcdir='$(abs_srcdir)'; export srcdir; \
     UMOUNTDRV='$(abs_builddir)/umountdrv'; export UMOUNTDRV; \
-    MOUNTDRV='$(abs_builddir)/mountdrv'; export MOUNTDRV;
+    MOUNTDRV='$(abs_builddir)/mountdrv'; export MOUNTDRV; \
+    RUNDRV='$(abs_builddir)/rundrv'; export RUNDRV;
 
 TESTS = $(unit_tests) $(dist_check_SCRIPTS)

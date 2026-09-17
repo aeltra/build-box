@@ -35,12 +35,18 @@
 #include <pwd.h>
 #include <stdarg.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "bbox-do.h"
+
+/* Linux 3.5. The value is kernel ABI; older libc headers simply lack it. */
+#ifndef PR_SET_NO_NEW_PRIVS
+#define PR_SET_NO_NEW_PRIVS 38
+#endif
 
 #ifndef _GNU_SOURCE
 extern char **environ;
@@ -312,23 +318,34 @@ void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
     memmove((void*) *buf_ptr + base_len, sub, sub_len + 1);
 }
 
+static void bbox_pmessage(const char *lead, const char *level,
+        const char *color, const char *format, va_list ap)
+{
+    char *bold = "\033[1m";
+    char *rst  = "\033[0m";
+
+    if(isatty(STDOUT_FILENO)) {
+        fprintf(stderr, "%sbuild-box %s%s: %s%s%s%s: ",
+            bold, lead, rst, bold, color, level, rst);
+    } else {
+        fprintf(stderr, "build-box-do %s: %s: ", lead, level);
+    }
+    vfprintf(stderr, format, ap);
+}
+
 void bbox_perror(const char *lead, const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
+    bbox_pmessage(lead, "error", "\033[31m", format, ap);
+    va_end(ap);
+}
 
-    char *bold = "\033[1m";
-    char *red  = "\033[31m";
-    char *rst  = "\033[0m";
-
-    if(isatty(STDOUT_FILENO)) {
-        fprintf(stderr, "%sbuild-box %s%s: %s%serror%s: ",
-            bold, lead, rst, bold, red, rst);
-    } else {
-        fprintf(stderr, "build-box-do %s: error: ", lead);
-    }
-    vfprintf(stderr, format, ap);
-
+void bbox_pwarning(const char *lead, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    bbox_pmessage(lead, "warning", "\033[33m", format, ap);
     va_end(ap);
 }
 
@@ -380,8 +397,11 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     if(bbox_drop_privileges() == -1)
         _exit(BBOX_ERR_RUNTIME);
 
+    if(bbox_no_new_privs() == -1)
+        _exit(BBOX_ERR_RUNTIME);
+
     /* Do this while we're at the fs root. */
-    bbox_try_fix_pkg_cache_symlink("", home_dir);
+    bbox_try_fix_pkg_cache_symlink("login", home_dir);
 
     if(home_dir)
         (void)chdir(home_dir);
@@ -718,6 +738,28 @@ int bbox_drop_privileges()
         bbox_perror("bbox_drop_privileges",
                 "could not drop privileges: %s.\n",
                     strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+int bbox_no_new_privs()
+{
+    /*
+     * From here on no execve() in this process or any descendant grants
+     * privileges: setuid and setgid bits and file capabilities are ignored.
+     * The flag cannot be cleared and is inherited across fork and exec.
+     *
+     * The chroot is a tree the user wrote, and everything a setuid binary
+     * reads after chroot() -- passwd, shadow, PAM, libc -- comes from it. A
+     * root-owned setuid binary hard-linked into the tree would hand the
+     * user root. With this flag it runs as the user, whatever it is and
+     * wherever it sits.
+     */
+    if(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1) {
+        bbox_perror("bbox_no_new_privs",
+                "failed to set no_new_privs: %s.\n", strerror(errno));
         return -1;
     }
 
@@ -1072,15 +1114,16 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
     if(bbox_run_command_capture(getuid(), "mkdir", argv, &out_buf,
             &out_buf_len) != 0)
     {
-        if(out_buf) {
-            bbox_perror(
+        if(out_buf && out_buf[0]) {
+            bbox_pwarning(
                 module,
-                "warning: failed to fix /.pkg-cache symlink: %s\n",
-                out_buf
+                "failed to create package cache directory '%s': %s\n",
+                buf, out_buf
             );
         } else {
-            bbox_perror(
-                module, "warning: failed to fix /.pkg-cache symlink.\n"
+            bbox_pwarning(
+                module, "failed to create package cache directory '%s'.\n",
+                buf
             );
         }
     }

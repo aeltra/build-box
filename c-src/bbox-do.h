@@ -76,6 +76,7 @@ void bbox_sep_join(char **buf_ptr, const char *base, const char *sep,
 void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
         size_t *n_ptr);
 void bbox_perror(const char *lead, const char *msg, ...);
+void bbox_pwarning(const char *lead, const char *msg, ...);
 int bbox_login_sh_chrooted(char *sys_root, char *home_dir);
 int bbox_runas_user_chrooted(const char *sys_root, int argc,
         char * const argv[], const bbox_conf_t *conf);
@@ -88,6 +89,7 @@ void bbox_sanitize_environment();
 int bbox_lower_privileges();
 int bbox_raise_privileges();
 int bbox_drop_privileges();
+int bbox_no_new_privs();
 int bbox_reset_supplementary_groups();
 
 int bbox_check_user_in_group_build_box();
