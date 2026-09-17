@@ -535,31 +535,53 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
         const char *chroot_home = bbox_config_get_chroot_home_dir(conf);
 
         char *realhome_relpath = NULL;
+        char *home_path = NULL;
         size_t rh_buf_len = 0;
+        size_t hp_buf_len = 0;
+        struct stat st;
+        int home_existed = 0;
 
         bbox_path_join(&realhome_relpath, chroot_home, "RealHome",
                 &rh_buf_len);
+        bbox_path_join(&home_path, sys_root, chroot_home, &hp_buf_len);
 
         /*
          * Create the per-target home and the RealHome mount point inside the
          * sysroot. We're not worried about this, because we are currently
          * running with lowered privileges.
+         *
+         * A per-target home that does not exist yet -- the target predates
+         * them -- is created with the mode a real home gets, so that the
+         * dotfiles and history kept there are the user's alone. An existing
+         * one keeps whatever mode it has.
          */
-        if(bbox_sysroot_mkdir_p("mount", sys_root, chroot_home) == -1) {
-            free(realhome_relpath);
-            return -1;
+        home_existed = lstat(home_path, &st) == 0;
+
+        if(bbox_sysroot_mkdir_p("mount", sys_root, chroot_home) == -1)
+            goto home_failure;
+
+        if(!home_existed && chmod(home_path, 0700) == -1) {
+            bbox_perror("mount", "could not set the mode of '%s': %s.\n",
+                    home_path, strerror(errno));
+            goto home_failure;
         }
 
-        if(bbox_sysroot_mkdir_p("mount", sys_root, realhome_relpath) == -1) {
-            free(realhome_relpath);
-            return -1;
-        }
+        if(bbox_sysroot_mkdir_p("mount", sys_root, realhome_relpath) == -1)
+            goto home_failure;
 
         free(realhome_relpath);
+        free(home_path);
 
         if(bbox_mount_bind(sys_root, homedir, chroot_home, "RealHome", 0,
                     MS_NOSUID | MS_NODEV) < 0)
             return -1;
+
+        return 0;
+
+    home_failure:
+        free(realhome_relpath);
+        free(home_path);
+        return -1;
     }
 
     return 0;

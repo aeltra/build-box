@@ -104,7 +104,13 @@ int bbox_init_user_directory()
     if(bbox_raise_privileges() == -1)
         goto failure;
 
-    if(mkdir(user_dir, 0755) == -1)
+    /*
+     * The targets below hold per-target homes with the user's dotfiles and
+     * shell history. Nobody but the user has business in there, so the
+     * directory gets the mode a real home gets. An existing directory keeps
+     * whatever mode it has.
+     */
+    if(mkdir(user_dir, 0700) == -1)
         goto failure;
     if(chown(user_dir, uid, gid) == -1)
         goto failure;

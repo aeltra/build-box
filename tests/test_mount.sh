@@ -29,7 +29,7 @@ set -u
 . "${srcdir:-.}/bboxlib.sh"
 
 require_harness MOUNTDRV
-require_tools unshare mount findmnt mountpoint
+require_tools unshare mount findmnt mountpoint stat
 enter_userns
 
 work=$(mktemp -d) || fail "mktemp failed"
@@ -37,7 +37,7 @@ work=$(mktemp -d) || fail "mktemp failed"
 cleanup() {
     cd / || :
     for _m in root/dev root/proc root/sys root/home/me/RealHome root/strict \
-            strictsrc; do
+            strictsrc fresh/home/me/RealHome old/home/me/RealHome; do
         umount "$work/$_m" 2>/dev/null || :
     done
     rm -rf "$work"
@@ -47,7 +47,8 @@ trap cleanup EXIT
 cd "$work" || fail "cd $work"
 
 mkdir -p root/dev root/proc root/sys root/home/me/RealHome root/strict src \
-    strictsrc victim
+    strictsrc victim fresh old/home/me
+chmod 755 old/home/me
 : > src/marker
 
 # New mounts inherit their parent's propagation.  With everything shared,
@@ -107,6 +108,21 @@ mounted root/home/me/RealHome || fail "RealHome is not mounted"
 has_option root/home/me/RealHome nosuid || fail "RealHome lacks nosuid"
 has_option root/home/me/RealHome nodev || fail "RealHome lacks nodev"
 note "a mount below a relative parent path carries its flags"
+
+# ── the home mount creates a private per-target home ────────────────
+#
+# A target that predates per-target homes gets one created at first
+# mount, with the mode a real home gets.  One that exists is left as it
+# is: its mode is the user's decision.
+
+"$MOUNTDRV" home fresh src /home/me || fail "home mount into a fresh sysroot failed"
+mounted fresh/home/me/RealHome || fail "RealHome is not mounted in the fresh sysroot"
+[ "$(stat -c %a fresh/home/me)" = 700 ] || fail "a new per-target home is mode $(stat -c %a fresh/home/me), not 700"
+note "a per-target home created at mount time is private"
+
+"$MOUNTDRV" home old src /home/me || fail "home mount into the old sysroot failed"
+[ "$(stat -c %a old/home/me)" = 755 ] || fail "an existing per-target home was changed to $(stat -c %a old/home/me)"
+note "an existing per-target home keeps its mode"
 
 # ── what must be refused, with nothing mounted ──────────────────────
 

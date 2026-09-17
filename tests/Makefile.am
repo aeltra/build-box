@@ -7,7 +7,7 @@ AM_CPPFLAGS = \
 # tests drive, so they are built but never run on their own.
 unit_tests = test_path_join
 
-check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv
+check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv initdrv
 
 noinst_HEADERS = test.h
 
@@ -46,6 +46,14 @@ rundrv_SOURCES = \
     $(top_srcdir)/c-src/config.c
 rundrv_CPPFLAGS = $(AM_CPPFLAGS)
 
+# The per-user directory setup, driven by test_init_user_dir.sh.
+initdrv_SOURCES = \
+    initdrv.c \
+    $(top_srcdir)/c-src/init.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+initdrv_CPPFLAGS = $(AM_CPPFLAGS)
+
 # The same for bbox_mount_bind() and bbox_mount_special(), driven by
 # test_mount.sh.
 mountdrv_SOURCES = \
@@ -59,6 +67,7 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 # Shell tests skip themselves (exit 77) when what they need is missing:
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
+    test_init_user_dir.sh \
     test_mount.sh \
     test_no_new_privs.sh \
     test_umount_unbind.sh
@@ -75,6 +84,7 @@ AM_TESTS_ENVIRONMENT = \
     srcdir='$(abs_srcdir)'; export srcdir; \
     UMOUNTDRV='$(abs_builddir)/umountdrv'; export UMOUNTDRV; \
     MOUNTDRV='$(abs_builddir)/mountdrv'; export MOUNTDRV; \
-    RUNDRV='$(abs_builddir)/rundrv'; export RUNDRV;
+    RUNDRV='$(abs_builddir)/rundrv'; export RUNDRV; \
+    INITDRV='$(abs_builddir)/initdrv'; export INITDRV;
 
 TESTS = $(unit_tests) $(dist_check_SCRIPTS)

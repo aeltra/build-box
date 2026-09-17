@@ -75,9 +75,12 @@ class BuildBoxGenerator(ImageGenerator):
 
         # Create the per-target home directory inside the sysroot. Pin the
         # mode of /home to what base-files ships, or "aept verify" complains.
+        # The home itself gets the mode a real home gets: the dotfiles and
+        # shell history kept there are the user's alone.
         chroot_home = os.path.join(sysroot, "home", username)
         os.makedirs(chroot_home, exist_ok=True)
         os.chmod(os.path.dirname(chroot_home), 0o755)
+        os.chmod(chroot_home, 0o700)
 
         # Make sure the package cache location exists
         os.makedirs(self._package_cache_path(), exist_ok=True)

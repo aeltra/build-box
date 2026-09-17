@@ -6,12 +6,16 @@
  *
  * usage: mountdrv bind <sysroot> <source> <parent-relpath> <name> [flag...]
  *        mountdrv special <sysroot> <fstype> <parent-relpath> <name>
+ *        mountdrv home <sysroot> <homedir> <chroot-home>
  *
  * Calls bbox_mount_bind() or bbox_mount_special() and exits 0 on
  * success, 1 on failure. Flags are "nosuid", "nodev" and "noexec" and
- * are applied with the remount that bbox_mount_bind() does. The
- * privilege dance inside is a no-op for uid 0, which is what the caller
- * is inside the user namespace the test sets up.
+ * are applied with the remount that bbox_mount_bind() does. "home" goes
+ * through bbox_mount_any() with only the home mount enabled, the way
+ * `build-box mount -m home` does, with a configuration assembled by hand
+ * (see rundrv.c for why). The privilege dance inside is a no-op for
+ * uid 0, which is what the caller is inside the user namespace the test
+ * sets up.
  */
 
 #include <stdio.h>
@@ -26,11 +30,23 @@ static void usage(void)
         "usage: mountdrv bind <sysroot> <source> <parent-relpath> <name> "
         "[nosuid|nodev|noexec]...\n"
         "       mountdrv special <sysroot> <fstype> <parent-relpath> <name>\n"
+        "       mountdrv home <sysroot> <homedir> <chroot-home>\n"
     );
 }
 
 int main(int argc, char *argv[])
 {
+    if(argc == 5 && strcmp(argv[1], "home") == 0) {
+        bbox_conf_t conf;
+
+        memset(&conf, 0, sizeof(conf));
+        conf.home_dir = argv[3];
+        conf.chroot_home_dir = argv[4];
+        bbox_config_set_mount_home(&conf);
+
+        return bbox_mount_any(&conf, argv[2]) == 0 ? 0 : 1;
+    }
+
     if(argc < 6) {
         usage();
         return 2;
