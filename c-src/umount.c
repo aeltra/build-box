@@ -136,11 +136,16 @@ int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
     size_t parent_len = 0;
     char fd_path[64 + NAME_MAX];
     struct stat st;
+    int lock_fd = -1;
     int parent_fd = -1;
     int is_mounted = 0;
     int rval = -1;
 
     if(bbox_validate_entry_name("umount", name) == -1)
+        return -1;
+
+    /* Serialize with other invocations on this sysroot, see bbox_lock_dir. */
+    if((lock_fd = bbox_lock_dir("umount", sys_root)) == -1)
         return -1;
 
     bbox_path_join(&parent, sys_root, parent_relpath, &parent_len);
@@ -214,6 +219,7 @@ cleanup_and_exit:
 
     if(parent_fd != -1)
         close(parent_fd);
+    close(lock_fd);
     free(parent);
     return rval;
 }

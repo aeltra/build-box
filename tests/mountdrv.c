@@ -7,6 +7,7 @@
  * usage: mountdrv bind <sysroot> <source> <parent-relpath> <name> [flag...]
  *        mountdrv special <sysroot> <fstype> <parent-relpath> <name>
  *        mountdrv home <sysroot> <homedir> <chroot-home>
+ *        mountdrv race <count> <command...>
  *
  * Calls bbox_mount_bind() or bbox_mount_special() and exits 0 on
  * success, 1 on failure. Flags are "nosuid", "nodev" and "noexec" and
@@ -16,11 +17,20 @@
  * (see rundrv.c for why). The privilege dance inside is a no-op for
  * uid 0, which is what the caller is inside the user namespace the test
  * sets up.
+ *
+ * "race" runs one of the commands above from <count> processes at once.
+ * The children are forked first and released together, so that all of
+ * them are past the "already mounted" check before the first mount is
+ * made -- the situation two build-box invocations only reach by chance.
+ * Exits 0 if every child reported success.
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "bbox-do.h"
 
@@ -31,10 +41,75 @@ static void usage(void)
         "[nosuid|nodev|noexec]...\n"
         "       mountdrv special <sysroot> <fstype> <parent-relpath> <name>\n"
         "       mountdrv home <sysroot> <homedir> <chroot-home>\n"
+        "       mountdrv race <count> <command...>\n"
     );
 }
 
+static int run(int argc, char *argv[]);
+
+static int race(int argc, char *argv[])
+{
+    int count = 0;
+    int barrier[2];
+    int failed = 0;
+    char byte;
+
+    if(argc < 3 || (count = atoi(argv[2])) < 1) {
+        usage();
+        return 2;
+    }
+
+    /*
+     * Every child blocks reading the pipe. Nobody writes to it, so they
+     * all wake up together when the parent closes the write end.
+     */
+    if(pipe(barrier) == -1) {
+        perror("pipe");
+        return 1;
+    }
+
+    for(int i = 0; i < count; i++) {
+        pid_t pid = fork();
+
+        if(pid == -1) {
+            perror("fork");
+            return 1;
+        }
+
+        if(pid == 0) {
+            close(barrier[1]);
+            (void) read(barrier[0], &byte, 1);
+            close(barrier[0]);
+            _exit(run(argc - 2, argv + 2));
+        }
+    }
+
+    close(barrier[1]);
+    close(barrier[0]);
+
+    for(int i = 0; i < count; i++) {
+        int wstatus = 0;
+
+        if(wait(&wstatus) == -1) {
+            perror("wait");
+            return 1;
+        }
+        if(!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0)
+            failed = 1;
+    }
+
+    return failed;
+}
+
 int main(int argc, char *argv[])
+{
+    if(argc >= 2 && strcmp(argv[1], "race") == 0)
+        return race(argc, argv);
+
+    return run(argc, argv);
+}
+
+static int run(int argc, char *argv[])
 {
     if(argc == 5 && strcmp(argv[1], "home") == 0) {
         bbox_conf_t conf;

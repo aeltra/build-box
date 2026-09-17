@@ -35,6 +35,7 @@
 #include <pwd.h>
 #include <stdarg.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -849,6 +850,49 @@ int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
     if(st.st_uid != uid) {
         bbox_perror(module, "directory '%s' is not owned by user id '%ld'.\n",
                 dir, (long) uid);
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+int bbox_lock_dir(const char *module, const char *dir)
+{
+    int fd = -1;
+
+    /*
+     * An exclusive flock(2) on the directory, held until the returned
+     * descriptor is closed. Every invocation that mounts or unmounts below
+     * the same sysroot takes it around the check whether something is
+     * mounted and the mount or unmount that follows. Without it, two
+     * invocations that both pass the check both mount, and the kernel
+     * stacks the second mount on top of the first, where only the top one
+     * gets its flags and propagation set and a single unmount only exposes
+     * the one below.
+     *
+     * The lock is taken with lowered privileges, so it lands only on
+     * directories the user can open. It is not a security check, only a
+     * serialization point; the lock identity is the directory's inode, so
+     * every path to the same sysroot means the same lock. flock() refuses
+     * O_PATH descriptors, hence the plain O_RDONLY.
+     */
+    fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+    if(fd == -1) {
+        bbox_perror(
+            module, "could not open '%s': %s.\n", dir, strerror(errno)
+        );
+        return -1;
+    }
+
+    while(flock(fd, LOCK_EX) == -1) {
+        if(errno == EINTR)
+            continue;
+
+        bbox_perror(
+            module, "could not lock '%s': %s.\n", dir, strerror(errno)
+        );
         close(fd);
         return -1;
     }

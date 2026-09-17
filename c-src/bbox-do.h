@@ -94,6 +94,7 @@ int bbox_reset_supplementary_groups();
 int bbox_check_user_in_group_build_box();
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid);
 int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid);
+int bbox_lock_dir(const char *module, const char *dir);
 long bbox_fd_mount_id(const char *module, int fd);
 int bbox_is_mount_point_at(const char *module, int dir_fd, const char *name);
 int bbox_validate_entry_name(const char *module, const char *name);

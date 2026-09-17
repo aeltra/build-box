@@ -360,6 +360,7 @@ int bbox_mount_special(const char *sys_root, const char *parent_relpath,
 {
     char *target = NULL;
     char fd_path[64];
+    int lock_fd = -1;
     int parent_fd = -1;
     int dir_fd = -1;
     int rval = -1;
@@ -371,6 +372,10 @@ int bbox_mount_special(const char *sys_root, const char *parent_relpath,
             filesystemtype);
         return -1;
     }
+
+    /* Serialize with other invocations on this sysroot, see bbox_lock_dir. */
+    if((lock_fd = bbox_lock_dir("mount", sys_root)) == -1)
+        return -1;
 
     switch(bbox_mount_open_target(sys_root, parent_relpath, name, &parent_fd,
                 &dir_fd, &target))
@@ -416,6 +421,7 @@ cleanup_and_exit:
         close(dir_fd);
     if(parent_fd != -1)
         close(parent_fd);
+    close(lock_fd);
     free(target);
     return rval;
 }
@@ -427,10 +433,15 @@ int bbox_mount_bind(const char *sys_root, const char *source,
     char *target = NULL;
     char fd_path[64];
     char source_path[64];
+    int lock_fd = -1;
     int parent_fd = -1;
     int dir_fd = -1;
     int source_fd = -1;
     int rval = -1;
+
+    /* Serialize with other invocations on this sysroot, see bbox_lock_dir. */
+    if((lock_fd = bbox_lock_dir("mount", sys_root)) == -1)
+        return -1;
 
     switch(bbox_mount_open_target(sys_root, parent_relpath, name, &parent_fd,
                 &dir_fd, &target))
@@ -491,6 +502,7 @@ cleanup_and_exit:
         close(dir_fd);
     if(parent_fd != -1)
         close(parent_fd);
+    close(lock_fd);
     free(target);
     return rval;
 }

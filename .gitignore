@@ -28,6 +28,7 @@ __pycache__
 /dist/
 /missing
 /test-driver
+/build
 
 # Everything built in tests/ is a compiled binary or a harness log with no
 # extension worth listing, so ignore the directory and whitelist the sources.
