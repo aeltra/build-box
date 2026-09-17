@@ -5,7 +5,7 @@ AM_CPPFLAGS = \
 
 # Unit tests run as tests; umountdrv and mountdrv are harnesses the shell
 # tests drive, so they are built but never run on their own.
-unit_tests = test_path_join
+unit_tests = test_path_join test_copy_file
 
 check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv initdrv
 
@@ -23,6 +23,12 @@ test_path_join_SOURCES = \
     $(top_srcdir)/c-src/util.c \
     $(top_srcdir)/c-src/config.c
 test_path_join_CPPFLAGS = $(AM_CPPFLAGS)
+
+test_copy_file_SOURCES = \
+    test_copy_file.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+test_copy_file_CPPFLAGS = $(AM_CPPFLAGS)
 
 # Calls bbox_umount_unbind() with the arguments it is given.  The
 # privileged half of build-box-do cannot be unit-tested as a plain user,

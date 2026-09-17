@@ -75,6 +75,7 @@ void bbox_sep_join(char **buf_ptr, const char *base, const char *sep,
         const char *sub, size_t *n_ptr);
 void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
         size_t *n_ptr);
+int bbox_copy_file(const char *src, const char *dst);
 void bbox_perror(const char *lead, const char *msg, ...);
 void bbox_pwarning(const char *lead, const char *msg, ...);
 int bbox_login_sh_chrooted(char *sys_root, char *home_dir);

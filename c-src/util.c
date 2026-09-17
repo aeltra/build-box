@@ -149,7 +149,13 @@ int bbox_copy_file(const char *src, const char *dst)
     int in_fd = -1, out_fd = -1, rval = -1;
     ssize_t num_bytes_read, num_bytes_written;
 
-    if(lstat(src, &src_st) == -1) {
+    /*
+     * stat(), not lstat(): the content is read through a symlink, so the
+     * mode has to come from the same place. resolv.conf is a symlink on
+     * hosts running resolvconf or systemd-resolved, and a symlink's own
+     * mode is 0777.
+     */
+    if(stat(src, &src_st) == -1) {
         bbox_perror("bbox_copy_file", "could not stat '%s'.\n", src);
         goto cleanup_and_exit;
     }
@@ -178,7 +184,8 @@ int bbox_copy_file(const char *src, const char *dst)
         );
         goto cleanup_and_exit;
     }
-    fchmod(out_fd, src_st.st_mode);
+    /* Permission bits only. A copy the user makes must never be setuid. */
+    fchmod(out_fd, src_st.st_mode & 0777);
 
     if((in_fd = open(src, O_RDONLY)) == -1) {
         bbox_perror("bbox_copy_file", "failed to open '%s' for reading: %s\n",
