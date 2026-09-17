@@ -195,18 +195,11 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
         return BBOX_ERR_RUNTIME;
     }
 
-    /* now do actual chroot call. */
-    if(chroot(".") == -1) {
-        bbox_perror("bbox_runas_user_chrooted",
-                "chroot to system root failed: %s.\n",
-                strerror(errno));
-        bbox_lower_privileges();
-        return BBOX_ERR_RUNTIME;
-    }
-
     /*
-     * If isolation is requested, set up namespaces and fork while we still
-     * have root privileges.
+     * If isolation is requested, set up the namespaces while we still have
+     * root privileges and before the chroot, because making the mounts
+     * private needs the root of a mount and after the chroot "/" is the
+     * sysroot directory, which is not one.
      */
     if(bbox_config_get_isolation(conf)) {
         /*
@@ -224,6 +217,30 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
             return BBOX_ERR_RUNTIME;
         }
 
+        /*
+         * unshare(2) leaves the copied mounts in the host's peer groups, so
+         * a mount made in here would propagate back out. The unshare(1)
+         * command makes everything private at this point; the syscall does
+         * not.
+         */
+        if(mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == -1) {
+            bbox_perror("bbox_runas_user_chrooted",
+                    "failed to make mounts private: %s\n", strerror(errno));
+            bbox_lower_privileges();
+            return BBOX_ERR_RUNTIME;
+        }
+    }
+
+    /* now do actual chroot call. */
+    if(chroot(".") == -1) {
+        bbox_perror("bbox_runas_user_chrooted",
+                "chroot to system root failed: %s.\n",
+                strerror(errno));
+        bbox_lower_privileges();
+        return BBOX_ERR_RUNTIME;
+    }
+
+    if(bbox_config_get_isolation(conf)) {
         /* Note that we only fork and wait when isolation is requested. */
         if((pid = fork()) == -1) {
             bbox_perror("bbox_runas_user_chrooted", "fork failed: %s\n",

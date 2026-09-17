@@ -74,6 +74,7 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
     test_init_user_dir.sh \
+    test_isolate.sh \
     test_mount.sh \
     test_no_new_privs.sh \
     test_umount_unbind.sh
