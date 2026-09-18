@@ -3,6 +3,12 @@ AM_CPPFLAGS = \
     -I$(top_srcdir)/c-src \
     -I$(srcdir)
 
+# Empty unless configured with --enable-coverage.  Every program here
+# compiles the c-src files it needs into itself, so the instrumentation
+# has to be on these builds, not on build-box-do.
+AM_CFLAGS = $(COVERAGE_CFLAGS)
+AM_LDFLAGS = $(COVERAGE_LDFLAGS)
+
 # Unit tests run as tests; umountdrv and mountdrv are harnesses the shell
 # tests drive, so they are built but never run on their own.
 unit_tests = test_path_join test_copy_file test_mkdir_p \
@@ -128,7 +134,7 @@ dist_check_SCRIPTS = \
     test_no_new_privs.sh \
     test_umount_unbind.sh
 
-EXTRA_DIST = bboxlib.sh
+EXTRA_DIST = bboxlib.sh coverage-report.py
 
 TEST_EXTENSIONS = .sh
 

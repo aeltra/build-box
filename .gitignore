@@ -30,6 +30,9 @@ __pycache__
 /missing
 /test-driver
 /build
+*.gcda
+*.gcno
+.coverage
 /.coverage
 
 # Everything built in tests/c/ is a compiled binary or a harness log with
@@ -39,6 +42,7 @@ __pycache__
 !/tests/c/*.am
 !/tests/c/*.c
 !/tests/c/*.h
+!/tests/c/*.py
 !/tests/c/*.sh
 /tests/python/*.log
 /tests/python/*.trs

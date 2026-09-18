@@ -8,3 +8,7 @@ build_box_do_SOURCES = bbox-do.c\
     umount.c\
     util.c
 noinst_HEADERS = bbox-do.h
+
+# Empty unless configured with --enable-coverage, see configure.ac.
+AM_CFLAGS = $(COVERAGE_CFLAGS)
+AM_LDFLAGS = $(COVERAGE_LDFLAGS)
