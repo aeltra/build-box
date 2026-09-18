@@ -59,6 +59,23 @@ extern char **environ;
 #define BBOX_LOCK_WAIT_SECS  5
 #define BBOX_LOCK_POLL_MSECS 200
 
+void bbox_getopt_begin()
+{
+    /*
+     * glibc and musl both permute by default and both stop at the first
+     * non-option on a leading "+" in the optstring. They differ in two
+     * places. glibc reads the optstring's mode only on a full reset,
+     * which optind = 0 asks for; at 1 it keeps the mode of the previous
+     * parse, so a "+" goes unseen once another parser has run first.
+     * musl re-reads every time. And glibc, not musl, honours
+     * POSIXLY_CORRECT, which turns permutation off and would let the
+     * caller change what a command line means. A setuid binary parses
+     * under conditions it chose, not the caller's, so the variable goes.
+     */
+    unsetenv("POSIXLY_CORRECT");
+    optind = 0;
+}
+
 void bbox_sanitize_environment()
 {
     char *start, *end, *name;

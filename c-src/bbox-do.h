@@ -69,6 +69,22 @@ unsigned int bbox_config_get_isolation(const bbox_conf_t *conf);
 unsigned int bbox_config_do_file_updates(const bbox_conf_t *conf);
 void bbox_config_free(bbox_conf_t *conf);
 
+/* Option parsing */
+
+/*
+ * Which kind a command's parser is decides its optstring. A dispatching
+ * parser hands the rest of the line to something else -- "run" hands it
+ * to a shell -- so it must stop at the first non-option, or it reads
+ * options that were never its to read. A leaf parser owns the whole line
+ * and permutes, so an option may follow an operand: "mount t -m dev".
+ * Every parser starts with bbox_getopt_begin(), which is where the two
+ * libcs are brought into line.
+ */
+#define BBOX_OPTS_DISPATCH(s) "+" s
+#define BBOX_OPTS_LEAF(s) s
+
+void bbox_getopt_begin();
+
 /* Utilities */
 
 void bbox_sep_join(char **buf_ptr, const char *base, const char *sep,
@@ -128,6 +144,7 @@ int bbox_init(int argc, char * const argv[]);
 int bbox_list(int argc, char * const argv[]);
 int bbox_login(int argc, char * const argv[]);
 int bbox_run(int argc, char * const argv[]);
+int bbox_run_command_index(int argc, char * const argv[], int index);
 int bbox_mount(int argc, char * const argv[]);
 int bbox_umount(int argc, char * const argv[]);
 

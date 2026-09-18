@@ -79,10 +79,11 @@ int bbox_login_getopt(bbox_conf_t *conf, int argc, char * const argv[])
      */
     bbox_config_clear_mount(conf);
     bbox_config_enable_file_updates(conf);
-    optind = 1;
+    bbox_getopt_begin();
 
     while(1) {
-        c = getopt_long(argc, argv, ":ht:m:", long_options, &option_index);
+        c = getopt_long(argc, argv, BBOX_OPTS_LEAF(":ht:m:"), long_options,
+                &option_index);
 
         if(c == -1)
             break;

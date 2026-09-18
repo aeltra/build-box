@@ -10,6 +10,13 @@
  * -m means everything, a given -m means exactly that, and for umount
  * the meaning is inverted, since there a set bit is something to keep.
  *
+ * Where an option may stand differs by command, see the macros in
+ * bbox-do.h: the four leaves permute, so an option after the target is
+ * still an option; run is a dispatcher and stops at the target, so
+ * everything after it is the command and none of it is read. Both rules
+ * have to hold with several parsers run in one process, which is what
+ * this test does, and whatever POSIXLY_CORRECT says.
+ *
  * The handlers are module-internal and not in bbox-do.h, hence the
  * prototypes below. The usage text goes to stdout, which is where the
  * TAP lines go too, so it is silenced around the calls that print it.
@@ -169,6 +176,35 @@ int main(void)
                 "login: --isolate is not a login option");
     }
 
+    /* ── leaves permute: an option after the target is still an option ── */
+
+    {
+        char *argv[] = {"mount", "t", "-m", "dev", NULL};
+        int i = run(bbox_mount_getopt, ARGC(argv), argv);
+        test_ok(i > 0 && i < ARGC(argv) && strcmp(argv[i], "t") == 0,
+                "mount: -m after the target is read, the target is found");
+        test_int_eq(mounts(), BBOX_DO_MOUNT_DEV, "mount: and takes effect");
+    }
+    {
+        char *argv[] = {"login", "t", "--no-mount", NULL};
+        run(bbox_login_getopt, ARGC(argv), argv);
+        test_int_eq(mounts(), 0, "login: --no-mount after the target takes effect");
+    }
+    {
+        char *argv[] = {"umount", "t", "--bogus", NULL};
+        test_int_eq(run(bbox_umount_getopt, ARGC(argv), argv), -2,
+                "umount: an unknown option after the target is still an error");
+    }
+    {
+        setenv("POSIXLY_CORRECT", "1", 1);
+        char *argv[] = {"mount", "t", "-m", "sys", NULL};
+        run(bbox_mount_getopt, ARGC(argv), argv);
+        test_int_eq(mounts(), BBOX_DO_MOUNT_SYS,
+                "a leaf permutes whatever POSIXLY_CORRECT says");
+        test_ok(getenv("POSIXLY_CORRECT") == NULL,
+                "and the variable is gone from the environment");
+    }
+
     /* ── run ──────────────────────────────────────────────────────── */
 
     {
@@ -179,18 +215,37 @@ int main(void)
         test_int_eq(mounts(), BBOX_DO_MOUNT_ALL, "run: mounts everything by default");
     }
     {
-        /*
-         * getopt_long() permutes argv, so the index it returns is not
-         * fixed; what holds is that the target sits there and the
-         * command follows, with the "--" consumed.
-         */
+        /* The documented form: options, target, "--", command. */
         char *argv[] = {"run", "--isolate", "t", "--", "make", NULL};
         int i = run(bbox_run_getopt, ARGC(argv), argv);
-        test_ok(i > 0 && i < ARGC(argv) && strcmp(argv[i], "t") == 0,
-                "run: the returned index is the target's");
-        test_str_eq(i > 0 && i + 1 < ARGC(argv) ? argv[i + 1] : NULL, "make",
-                "run: and the command follows it, without the --");
+        test_int_eq(i, 2, "run: the returned index is the target's");
+        test_str_eq(argv[i + 1], "--", "run: the -- is not consumed by getopt");
+        test_str_eq(argv[bbox_run_command_index(ARGC(argv), argv, i + 1)], "make",
+                "run: and the command starts after it");
         test_ok(bbox_config_get_isolation(&conf) != 0, "run: --isolate is noted");
+    }
+    {
+        /* The command's own options are not build-box's to read. */
+        char *argv[] = {"run", "t", "ls", "-l", NULL};
+        int i = run(bbox_run_getopt, ARGC(argv), argv);
+        test_int_eq(i, 1, "run: the parse stops at the target");
+        test_ok(strcmp(argv[2], "ls") == 0 && strcmp(argv[3], "-l") == 0,
+                "run: and the command's -l is left where it was");
+    }
+    {
+        char *argv[] = {"run", "-m", "proc", "t", "make", "-j4", "--isolate", NULL};
+        int i = run(bbox_run_getopt, ARGC(argv), argv);
+        test_int_eq(i, 3, "run: options before the target are read");
+        test_int_eq(bbox_config_get_isolation(&conf), 0,
+                "run: an --isolate after the target is the command's, not ours");
+        test_int_eq(mounts(), BBOX_DO_MOUNT_PROC, "run: the -m before it was");
+    }
+    {
+        setenv("POSIXLY_CORRECT", "1", 1);
+        char *argv[] = {"run", "--isolate", "t", "sh", NULL};
+        test_int_eq(run(bbox_run_getopt, ARGC(argv), argv), 2,
+                "run: stops at the target whatever POSIXLY_CORRECT says");
+        test_ok(bbox_config_get_isolation(&conf) != 0, "run: with --isolate read");
     }
     {
         char *argv[] = {"run", "--no-mount", "--no-file-copy", "t", "sh", NULL};
@@ -213,6 +268,29 @@ int main(void)
         char *argv[] = {"run", "--help", NULL};
         test_int_eq(run(bbox_run_getopt, ARGC(argv), argv), -1,
                 "run: --help asks for a clean exit");
+    }
+
+    /* ── run: one "--" after the target is build-box's ────────────── */
+
+    {
+        char *argv[] = {"run", "t", "--", "ls", "-l", NULL};
+        test_int_eq(bbox_run_command_index(ARGC(argv), argv, 2), 3,
+                "run: a -- right after the target is skipped");
+    }
+    {
+        char *argv[] = {"run", "t", "ls", "-l", NULL};
+        test_int_eq(bbox_run_command_index(ARGC(argv), argv, 2), 2,
+                "run: without one the command starts at the target's successor");
+    }
+    {
+        char *argv[] = {"run", "t", "--", "--", "x", NULL};
+        test_int_eq(bbox_run_command_index(ARGC(argv), argv, 2), 3,
+                "run: a second -- belongs to the command");
+    }
+    {
+        char *argv[] = {"run", "t", NULL};
+        test_int_eq(bbox_run_command_index(ARGC(argv), argv, 2), 2,
+                "run: nothing after the target is left alone");
     }
 
     /* ── umount: a set bit is something to keep ───────────────────── */

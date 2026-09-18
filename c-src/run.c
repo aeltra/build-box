@@ -56,7 +56,10 @@ void bbox_run_usage()
         "                                                                         \n"
         "USAGE:                                                                   \n"
         "                                                                         \n"
-        "  build-box run [OPTIONS] <target-name> -- <command>                     \n"
+        "  build-box run [OPTIONS] <target-name> [--] <command>                   \n"
+        "                                                                         \n"
+        "Options go before the target name. Everything after it is the command   \n"
+        "and is passed on as it is, so the command may have options of its own.  \n"
         "                                                                         \n"
         "OPTIONS:                                                                 \n"
         "                                                                         \n"
@@ -94,10 +97,12 @@ int bbox_run_getopt(bbox_conf_t *conf, int argc, char * const argv[])
 
     bbox_config_clear_mount(conf);
     bbox_config_enable_file_updates(conf);
-    optind = 1;
+    bbox_getopt_begin();
 
+    /* A dispatcher: the parse stops at the target, the rest is the command. */
     while(1) {
-        c = getopt_long(argc, argv, ":ht:m:", long_options, &option_index);
+        c = getopt_long(argc, argv, BBOX_OPTS_DISPATCH(":ht:m:"), long_options,
+                &option_index);
 
         if(c == -1)
             break;
@@ -423,6 +428,20 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     _exit(BBOX_ERR_RUNTIME);
 }
 
+/*
+ * Where the command starts, given the index just past the target. The
+ * usage text has long put a "--" there, and since the parser stops at
+ * the target that "--" now reaches us instead of getopt. It is ours, not
+ * the shell's, so one is dropped; a second one is the command's.
+ */
+int bbox_run_command_index(int argc, char * const argv[], int index)
+{
+    if(index < argc && strcmp(argv[index], "--") == 0)
+        index++;
+
+    return index;
+}
+
 int bbox_run(int argc, char * const argv[])
 {
     char *buf = NULL;
@@ -454,6 +473,8 @@ int bbox_run(int argc, char * const argv[])
 
     if(validate_target_name("run", target) == -1)
         goto cleanup_and_exit;
+
+    non_optind = bbox_run_command_index(argc, argv, non_optind);
 
     bbox_path_join(
         &buf, bbox_config_get_target_dir(conf), target, &buf_len

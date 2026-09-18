@@ -59,10 +59,11 @@ int bbox_init_getopt(bbox_conf_t *conf, int argc, char * const argv[])
         { 0,         0,                 0,  0 }
     };
 
-    optind = 1;
+    bbox_getopt_begin();
 
     while(1) {
-        c = getopt_long(argc, argv, ":h", long_options, &option_index);
+        c = getopt_long(argc, argv, BBOX_OPTS_LEAF(":h"), long_options,
+                &option_index);
 
         if(c == -1)
             break;
