@@ -3,6 +3,13 @@
 export DH_VERBOSE = 1
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
+# The Python tests run through "make check" below, from the source tree,
+# where conftest.py makes them import the package from lib/.  pybuild
+# would otherwise detect pytest and run them a second time from its own
+# copy of the tree, which has neither lib/ nor bin/, so the installed
+# package answers instead of the one being built.
+export PYBUILD_DISABLE = test
+
 BUILD_BOX_VERSION = $(shell \
         head -n1 debian/changelog | awk '{{print $$2}}' | \
                 sed 's/(\|)//g' | rev | cut -d- -f2- | rev \

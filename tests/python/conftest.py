@@ -16,6 +16,15 @@ LIB = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib")
 )
 
+# Run from anywhere but the source tree, the fallback would be the
+# installed package, and a green run against that says nothing about the
+# tree.  Refuse rather than measure the wrong thing.
+if not os.path.isdir(os.path.join(LIB, "aeltra", "buildbox")):
+    raise RuntimeError(
+        "no lib/aeltra/buildbox next to these tests; run them from the "
+        "source tree, or through make check"
+    )
+
 try:
     import aeltra
     aeltra.__path__.insert(0, os.path.join(LIB, "aeltra"))
