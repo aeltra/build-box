@@ -39,6 +39,7 @@
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "bbox-do.h"
@@ -53,6 +54,10 @@ extern char **environ;
 #endif
 
 #define BBOX_COPY_BUF_SIZE 4096
+
+/* How long a sysroot lock is waited for, and how often it is tried. */
+#define BBOX_LOCK_WAIT_SECS  5
+#define BBOX_LOCK_POLL_MSECS 200
 
 void bbox_sanitize_environment()
 {
@@ -868,6 +873,8 @@ int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid)
 
 int bbox_lock_dir(const char *module, const char *dir)
 {
+    struct timespec poll = {0, BBOX_LOCK_POLL_MSECS * 1000000L};
+    int tries = BBOX_LOCK_WAIT_SECS * 1000 / BBOX_LOCK_POLL_MSECS;
     int fd = -1;
 
     /*
@@ -885,6 +892,11 @@ int bbox_lock_dir(const char *module, const char *dir)
      * serialization point; the lock identity is the directory's inode, so
      * every path to the same sysroot means the same lock. flock() refuses
      * O_PATH descriptors, hence the plain O_RDONLY.
+     *
+     * The wait is bounded. Anyone who can open the directory for reading
+     * can hold the same lock, and it is taken before anything is printed,
+     * so an unbounded wait would be a silent hang at somebody else's
+     * pleasure. A holder of our own is done in milliseconds.
      */
     fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
@@ -895,15 +907,28 @@ int bbox_lock_dir(const char *module, const char *dir)
         return -1;
     }
 
-    while(flock(fd, LOCK_EX) == -1) {
+    while(flock(fd, LOCK_EX | LOCK_NB) == -1) {
         if(errno == EINTR)
             continue;
 
-        bbox_perror(
-            module, "could not lock '%s': %s.\n", dir, strerror(errno)
-        );
-        close(fd);
-        return -1;
+        if(errno != EWOULDBLOCK) {
+            bbox_perror(
+                module, "could not lock '%s': %s.\n", dir, strerror(errno)
+            );
+            close(fd);
+            return -1;
+        }
+
+        if(tries-- == 0) {
+            bbox_perror(
+                module, "could not lock '%s': another process has been "
+                "holding it for %d seconds.\n", dir, BBOX_LOCK_WAIT_SECS
+            );
+            close(fd);
+            return -1;
+        }
+
+        nanosleep(&poll, NULL);
     }
 
     return fd;

@@ -89,6 +89,7 @@ dist_check_SCRIPTS = \
     test_init_user_dir.sh \
     test_isolate.sh \
     test_isolate_proc.sh \
+    test_lock_wait.sh \
     test_mount.sh \
     test_mount_race.sh \
     test_mount_undo.sh \
