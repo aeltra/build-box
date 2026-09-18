@@ -15,7 +15,8 @@ unit_tests = test_path_join test_copy_file test_mkdir_p \
     test_sanitize_environment test_config test_getopt test_target_name \
     test_dynamic_config
 
-check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv initdrv
+check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv initdrv cmddrv \
+    groupdrv
 
 noinst_HEADERS = test.h
 
@@ -111,6 +112,26 @@ initdrv_SOURCES = \
     $(top_srcdir)/c-src/config.c
 initdrv_CPPFLAGS = $(AM_CPPFLAGS)
 
+# The command entry points themselves, driven by test_commands.sh: every
+# module but bbox-do.c, which has the real main().
+cmddrv_SOURCES = \
+    cmddrv.c \
+    $(top_srcdir)/c-src/init.c \
+    $(top_srcdir)/c-src/login.c \
+    $(top_srcdir)/c-src/mount.c \
+    $(top_srcdir)/c-src/run.c \
+    $(top_srcdir)/c-src/umount.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+cmddrv_CPPFLAGS = $(AM_CPPFLAGS)
+
+# The group gate, driven by test_group_check.sh.
+groupdrv_SOURCES = \
+    groupdrv.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+groupdrv_CPPFLAGS = $(AM_CPPFLAGS)
+
 # The same for bbox_mount_bind() and bbox_mount_special(), driven by
 # test_mount.sh.
 mountdrv_SOURCES = \
@@ -124,10 +145,13 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 # Shell tests skip themselves (exit 77) when what they need is missing:
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
+    test_commands.sh \
+    test_group_check.sh \
     test_init_user_dir.sh \
     test_isolate.sh \
     test_isolate_proc.sh \
     test_lock_wait.sh \
+    test_main.sh \
     test_mount.sh \
     test_mount_race.sh \
     test_mount_undo.sh \
@@ -147,6 +171,9 @@ AM_TESTS_ENVIRONMENT = \
     UMOUNTDRV='$(abs_builddir)/umountdrv'; export UMOUNTDRV; \
     MOUNTDRV='$(abs_builddir)/mountdrv'; export MOUNTDRV; \
     RUNDRV='$(abs_builddir)/rundrv'; export RUNDRV; \
-    INITDRV='$(abs_builddir)/initdrv'; export INITDRV;
+    INITDRV='$(abs_builddir)/initdrv'; export INITDRV; \
+    CMDDRV='$(abs_builddir)/cmddrv'; export CMDDRV; \
+    GROUPDRV='$(abs_builddir)/groupdrv'; export GROUPDRV; \
+    BBOX_DO='$(abs_top_builddir)/c-src/build-box-do'; export BBOX_DO;
 
 TESTS = $(unit_tests) $(dist_check_SCRIPTS)
