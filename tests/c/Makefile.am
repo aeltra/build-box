@@ -6,7 +6,8 @@ AM_CPPFLAGS = \
 # Unit tests run as tests; umountdrv and mountdrv are harnesses the shell
 # tests drive, so they are built but never run on their own.
 unit_tests = test_path_join test_copy_file test_mkdir_p \
-    test_sanitize_environment
+    test_sanitize_environment test_config test_getopt test_target_name \
+    test_dynamic_config
 
 check_PROGRAMS = $(unit_tests) umountdrv mountdrv rundrv initdrv
 
@@ -42,6 +43,37 @@ test_sanitize_environment_SOURCES = \
     $(top_srcdir)/c-src/util.c \
     $(top_srcdir)/c-src/config.c
 test_sanitize_environment_CPPFLAGS = $(AM_CPPFLAGS)
+
+test_config_SOURCES = \
+    test_config.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+test_config_CPPFLAGS = $(AM_CPPFLAGS)
+
+# The option handlers live in the command modules, so all five come
+# along; bbox-do.c stays out because it has the real main().
+test_getopt_SOURCES = \
+    test_getopt.c \
+    $(top_srcdir)/c-src/init.c \
+    $(top_srcdir)/c-src/login.c \
+    $(top_srcdir)/c-src/mount.c \
+    $(top_srcdir)/c-src/run.c \
+    $(top_srcdir)/c-src/umount.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+test_getopt_CPPFLAGS = $(AM_CPPFLAGS)
+
+test_target_name_SOURCES = \
+    test_target_name.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+test_target_name_CPPFLAGS = $(AM_CPPFLAGS)
+
+test_dynamic_config_SOURCES = \
+    test_dynamic_config.c \
+    $(top_srcdir)/c-src/util.c \
+    $(top_srcdir)/c-src/config.c
+test_dynamic_config_CPPFLAGS = $(AM_CPPFLAGS)
 
 # Calls bbox_umount_unbind() with the arguments it is given.  The
 # privileged half of build-box-do cannot be unit-tested as a plain user,
