@@ -87,8 +87,6 @@ void bbox_getopt_begin();
 
 /* Utilities */
 
-void bbox_sep_join(char **buf_ptr, const char *base, const char *sep,
-        const char *sub, size_t *n_ptr);
 void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
         size_t *n_ptr);
 int bbox_copy_file(const char *src, const char *dst);
@@ -141,7 +139,6 @@ int bbox_init_user_directory();
 /* Commands */
 
 int bbox_init(int argc, char * const argv[]);
-int bbox_list(int argc, char * const argv[]);
 int bbox_login(int argc, char * const argv[]);
 int bbox_run(int argc, char * const argv[]);
 int bbox_run_command_index(int argc, char * const argv[], int index);

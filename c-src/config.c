@@ -110,7 +110,6 @@ bbox_conf_t *bbox_config_new()
      */
     conf->config_bits = 0;
 
-success:
     return conf;
 
 failure:

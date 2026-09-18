@@ -278,38 +278,6 @@ cleanup_and_exit:
     return rval;
 }
 
-void bbox_sep_join(char **buf_ptr, const char *base, const char *sep,
-        const char *sub, size_t *n_ptr)
-{
-    size_t base_len     = strlen(base);
-    size_t sub_len      = strlen(sub);
-    size_t sep_len      = strlen(sep);
-    size_t req_buf_size = base_len + sep_len + sub_len + 1;
-    int base_is_buffer  = 0;
-
-    if(base == *buf_ptr)
-        base_is_buffer = 1;
-
-    if(req_buf_size > *n_ptr)
-    {
-        *buf_ptr = realloc(*buf_ptr, req_buf_size);
-
-        if(!*buf_ptr) {
-            bbox_perror("bbox_sep_join", "out of memory?\n");
-            abort();
-        }
-
-        if(base_is_buffer)
-            base = *buf_ptr;
-
-        *n_ptr = req_buf_size;
-    }
-
-    memmove((void*) *buf_ptr, base, base_len + 1);
-    memmove((void*) *buf_ptr + base_len, sep, sep_len + 1);
-    memmove((void*) *buf_ptr + base_len + sep_len, sub, sub_len + 1);
-}
-
 void bbox_path_join(char **buf_ptr, const char *base, const char *sub,
         size_t *n_ptr)
 {
@@ -1171,7 +1139,6 @@ char *bbox_get_user_dir(uid_t uid, size_t *n_ptr)
     if(needed_bytes >= buf_size)
         goto failure;
 
-success:
     if(n_ptr != NULL)
         *n_ptr = buf_size;
     return user_dir;
