@@ -13,4 +13,11 @@ srcdir=${srcdir:-.}
 
 python3 -c 'import pytest' 2>/dev/null || { echo "SKIP: pytest is not available"; exit 77; }
 
+# The wrapper imports the other aeltra packages, which come from the host
+# installation rather than from this tree.  Without them every test would
+# fail at import, on a machine that tells nothing about build-box -- the
+# musl container, for one.
+python3 -c 'import aeltra.error, aeltra.osimage.sysroot, aeltra.distro.config.distroinfo' 2>/dev/null \
+    || { echo "SKIP: the aeltra Python packages are not installed"; exit 77; }
+
 exec python3 -m pytest -p no:cacheprovider "$srcdir"

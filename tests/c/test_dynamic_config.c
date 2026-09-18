@@ -72,7 +72,21 @@ static int count_lines(const char *buf)
     return n;
 }
 
-/* The line for a user, or NULL. Fields are colon-separated. */
+/* Field i (0-based) of a colon-separated line, empty fields included. */
+static char *field(const char *line, int i)
+{
+    const char *p = line;
+    for(; i > 0; i--) {
+        p = strchr(p, ':');
+        if(!p)
+            return NULL;
+        p++;
+    }
+    const char *end = strchr(p, ':');
+    return strndup(p, end ? (size_t) (end - p) : strlen(p));
+}
+
+/* The line for a name, or NULL. Fields are colon-separated. */
 static char *line_for(const char *buf, const char *name)
 {
     size_t len = strlen(name);
@@ -90,18 +104,54 @@ static char *line_for(const char *buf, const char *name)
     return NULL;
 }
 
-/* Field i (0-based) of a colon-separated line, empty fields included. */
-static char *field(const char *line, int i)
+/*
+ * The line for a uid, or NULL. The code keys the rewrite on the uid, not
+ * the name, and a database may list one name twice or the caller may be
+ * root, so the assertions key on the uid as well.
+ */
+static char *line_for_uid(const char *buf, uid_t uid)
 {
-    const char *p = line;
-    for(; i > 0; i--) {
-        p = strchr(p, ':');
-        if(!p)
-            return NULL;
-        p++;
+    const char *p = buf;
+
+    while(p && *p) {
+        const char *end = strchr(p, '\n');
+        char *line = strndup(p, end ? (size_t) (end - p) : strlen(p));
+        char *id = field(line, 2);
+
+        if(id && (uid_t) strtoul(id, NULL, 10) == uid) {
+            free(id);
+            return line;
+        }
+        free(id);
+        free(line);
+        p = end ? end + 1 : NULL;
     }
-    const char *end = strchr(p, ':');
-    return strndup(p, end ? (size_t) (end - p) : strlen(p));
+    return NULL;
+}
+
+/* Some entry that is not the caller, for the pass-through check. */
+static struct passwd *somebody_else(uid_t me)
+{
+    static struct passwd copy;
+    static char name[256], dir[512], shell[256];
+    struct passwd *pw;
+
+    setpwent();
+    while((pw = getpwent()) != NULL) {
+        if(pw->pw_uid == me)
+            continue;
+        snprintf(name, sizeof(name), "%s", pw->pw_name);
+        snprintf(dir, sizeof(dir), "%s", pw->pw_dir);
+        snprintf(shell, sizeof(shell), "%s", pw->pw_shell);
+        copy = *pw;
+        copy.pw_name = name;
+        copy.pw_dir = dir;
+        copy.pw_shell = shell;
+        endpwent();
+        return &copy;
+    }
+    endpwent();
+    return NULL;
 }
 
 static int count_pw(void)
@@ -153,6 +203,13 @@ int main(void)
         return 77;
     }
 
+    /*
+     * Taken out of the entry before any other lookup: on musl getpwent()
+     * hands back the same static buffer getpwuid() did, so after the
+     * first enumeration below "me" would describe whoever came last.
+     */
+    uid_t my_uid = me->pw_uid;
+
     work = mkdtemp(dir_template);
     if(!work || mkdir(path("etc"), 0755) == -1) {
         perror("mkdtemp");
@@ -181,7 +238,7 @@ int main(void)
             "one line per entry of the password database");
 
     {
-        char *line = line_for(passwd, me->pw_name);
+        char *line = line_for_uid(passwd, my_uid);
         char *dir = line ? field(line, 5) : NULL;
         char *pw = line ? field(line, 1) : NULL;
         test_str_eq(dir, "/home/tester",
@@ -190,13 +247,13 @@ int main(void)
         free(line); free(dir); free(pw);
     }
     {
-        struct passwd *root = getpwnam("root");
-        char *line = line_for(passwd, "root");
+        struct passwd *other = somebody_else(my_uid);
+        char *line = other ? line_for_uid(passwd, other->pw_uid) : NULL;
         char *dir = line ? field(line, 5) : NULL;
         char *shell = line ? field(line, 6) : NULL;
-        test_str_eq(dir, root ? root->pw_dir : NULL,
+        test_str_eq(dir, other ? other->pw_dir : NULL,
                 "everybody else's home is passed through");
-        test_str_eq(shell, root ? root->pw_shell : NULL, "as is the shell");
+        test_str_eq(shell, other ? other->pw_shell : NULL, "as is the shell");
         free(line); free(dir); free(shell);
     }
 
