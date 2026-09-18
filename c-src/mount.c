@@ -263,6 +263,35 @@ static int bbox_mount_current_flags(const char *target, int fd,
 }
 
 /*
+ * Take the mount on <name> below the parent down again. Must be called with
+ * privileges raised and with no descriptor to the mount still open, or the
+ * unmount fails with EBUSY.
+ *
+ * The path goes through the verified parent descriptor and UMOUNT_NOFOLLOW
+ * refuses a symlink, so the single name can only resolve to a mount
+ * directly below the parent, the same way bbox_umount_unbind() addresses
+ * one.
+ */
+static void bbox_mount_undo(const char *target, int parent_fd,
+        const char *name)
+{
+    char undo_path[64 + NAME_MAX];
+
+    if(snprintf(undo_path, sizeof(undo_path), "/proc/self/fd/%d/%s",
+            parent_fd, name) >= (int) sizeof(undo_path))
+    {
+        bbox_pwarning("mount", "mount point name '%s' is too long, %s stays "
+                "mounted.\n", name, target);
+        return;
+    }
+
+    if(umount2(undo_path, UMOUNT_NOFOLLOW) != 0) {
+        bbox_pwarning("mount", "failed to unmount %s again: %s.\n", target,
+                strerror(errno));
+    }
+}
+
+/*
  * Apply propagation and mount flags to the mount that was just created on
  * <name> below the parent. Must be called with privileges raised.
  *
@@ -270,17 +299,23 @@ static int bbox_mount_current_flags(const char *target, int fd,
  * through that descriptor, so the follow-up mount calls act on exactly the
  * mount we made and nothing else. Bind mounts inherit the source mount's
  * flags, so a remount is the only way to add restrictions like MS_NOSUID,
- * and the inherited flags are kept. If that remount fails, the mount is
- * taken down again rather than left in place without the restrictions that
- * were asked for.
+ * and the inherited flags are kept.
+ *
+ * Whatever fails in here, the mount is taken down again rather than left
+ * in place without the propagation and restrictions that were asked for.
+ * Every step is one the caller can make fail: rlimits survive the setuid
+ * exec, so a descriptor budget that runs out right after mount(2) is the
+ * caller's choice, and a mount left behind that way would be shared and
+ * carry only the source's flags. The next call would then find it and
+ * report success without repairing it.
  */
 static int bbox_mount_finish(const char *target, int parent_fd,
         const char *name, int dir_fd, unsigned long remount_flags)
 {
     char mnt_path[64];
-    char undo_path[64 + NAME_MAX];
     long dir_mount_id = -1;
     long mnt_mount_id = -1;
+    unsigned long current_flags = 0;
     int mnt_fd = -1;
     int rval = -1;
 
@@ -289,7 +324,7 @@ static int bbox_mount_finish(const char *target, int parent_fd,
     if(mnt_fd == -1) {
         bbox_perror("mount", "could not re-open '%s' after mounting: %s.\n",
                 target, strerror(errno));
-        return -1;
+        goto cleanup_and_exit;
     }
 
     if((dir_mount_id = bbox_fd_mount_id("mount", dir_fd)) == -1)
@@ -307,41 +342,20 @@ static int bbox_mount_finish(const char *target, int parent_fd,
     if(mount(NULL, mnt_path, NULL, MS_PRIVATE, NULL) != 0) {
         bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
                 target, strerror(errno));
-        /* Continue anyway. */
+        goto cleanup_and_exit;
     }
 
     if(remount_flags) {
-        unsigned long current_flags = 0;
-        int failed = 0;
+        if(bbox_mount_current_flags(target, mnt_fd, &current_flags) == -1)
+            goto cleanup_and_exit;
 
-        if(bbox_mount_current_flags(target, mnt_fd, &current_flags) == -1) {
-            failed = 1;
-        }
-        else if(mount(NULL, mnt_path, NULL,
+        if(mount(NULL, mnt_path, NULL,
                     MS_BIND | MS_REMOUNT | current_flags | remount_flags,
                     NULL) != 0)
         {
             bbox_perror("mount",
                     "failed to remount %s with restricted flags: %s.\n",
                     target, strerror(errno));
-            failed = 1;
-        }
-
-        if(failed) {
-            /*
-             * Undo the mount. The descriptor to it must be closed first, or
-             * the unmount fails with EBUSY. The parent descriptor remains
-             * open, so the single name below it is still unambiguous.
-             */
-            close(mnt_fd);
-            mnt_fd = -1;
-
-            if(snprintf(undo_path, sizeof(undo_path), "/proc/self/fd/%d/%s",
-                    parent_fd, name) < (int) sizeof(undo_path))
-            {
-                (void) umount2(undo_path, UMOUNT_NOFOLLOW);
-            }
-
             goto cleanup_and_exit;
         }
     }
@@ -350,8 +364,17 @@ static int bbox_mount_finish(const char *target, int parent_fd,
 
 cleanup_and_exit:
 
+    /*
+     * The descriptor to the mount has to go before the undo below, or the
+     * unmount fails with EBUSY. The parent descriptor remains open, so the
+     * single name below it is still unambiguous.
+     */
     if(mnt_fd != -1)
         close(mnt_fd);
+
+    if(rval == -1)
+        bbox_mount_undo(target, parent_fd, name);
+
     return rval;
 }
 

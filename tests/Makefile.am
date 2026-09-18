@@ -91,6 +91,7 @@ dist_check_SCRIPTS = \
     test_isolate_proc.sh \
     test_mount.sh \
     test_mount_race.sh \
+    test_mount_undo.sh \
     test_no_new_privs.sh \
     test_umount_unbind.sh
 
