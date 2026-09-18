@@ -118,8 +118,17 @@ void bbox_sanitize_environment()
         if(!strncmp(start, "OBJCXXFLAGS_FOR_BUILD=", 22))
             goto next;
 
-        if((end = strchr(start, '=')) == NULL)
-            goto next;
+        /*
+         * An entry with no "=" or nothing in front of it is not a variable
+         * and cannot be named to unsetenv(), which refuses an empty name.
+         * execve(2) passes such strings through unchecked, so they do turn
+         * up. Splice the entry out the way unsetenv() would.
+         */
+        if((end = strchr(start, '=')) == NULL || end == start) {
+            for(size_t j = i; environ[j] != NULL; j++)
+                environ[j] = environ[j + 1];
+            continue;
+        }
 
         name = strndup(start, end - start);
 
