@@ -1,3 +1,13 @@
+build-box-utils (0.16.1-1) unstable; urgency=medium
+
+  * Fixed: the package build ran the Python tests a second time through
+    pybuild, from a copy of the tree without lib/, so they tested the
+    installed package instead of the one being built and failed. The
+    tests run once, through "make check", and refuse to run from
+    anywhere but the source tree.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 19 Sep 2026 00:30:34 +0300
+
 build-box-utils (0.16.0-1) unstable; urgency=medium
 
   * Fixed: build-box-do mounted and unmounted by path as root, which a
