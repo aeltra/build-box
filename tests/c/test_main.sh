@@ -48,6 +48,13 @@ fi
 
 # ── the group gate ───────────────────────────────────────────────────
 
+# A package build runs the suite as root, and root is refused before the
+# gate is ever reached, so there is nothing more to see from here.
+if [ "$(id -u)" = 0 ]; then
+    note "SKIP: running as root, the group gate and the dispatch are not reached"
+    exit 0
+fi
+
 if id -nG | tr ' ' '\n' | grep -qx build-box; then
     "$BBOX_DO" init --help >/dev/null 2>"$work/err" || fail "a member of build-box was refused: $(cat "$work/err")"
     note "a member of group build-box is admitted"
