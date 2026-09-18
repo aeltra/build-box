@@ -86,6 +86,16 @@ int main(void)
     test_int_eq(bbox_mkdir_p("test", path("a/file/x")), -1,
             "as is a file in the middle of the path");
 
+    /* ── an empty path is an error, not a read past the buffer ────── */
+    /*
+     * The loop over the components started at the second byte, which for
+     * "" is past the terminator. Reachable only through a symlink with an
+     * empty target, which Linux refuses to create, but a sanitizer build
+     * flags it.
+     */
+
+    test_int_eq(bbox_mkdir_p("test", ""), -1, "an empty path is an error");
+
     /* ── a symlink to a directory is followed, like mkdir -p does ──── */
 
     if(symlink("a", path("link")) == -1) {

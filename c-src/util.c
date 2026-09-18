@@ -992,6 +992,12 @@ static int bbox_mkdir_p_quiet(const char *path)
     struct stat st;
     int rval = -1;
 
+    /* The loop below starts at the second byte, which "" does not have. */
+    if(path[0] == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
     if((buf = strdup(path)) == NULL) {
         bbox_perror("bbox_mkdir_p", "out of memory?\n");
         abort();
