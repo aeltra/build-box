@@ -1,3 +1,53 @@
+build-box-utils (0.16.0-1) unstable; urgency=medium
+
+  * Fixed: build-box-do mounted and unmounted by path as root, which a
+    symlink swapped into the target tree could redirect elsewhere. Every
+    mount, remount, propagation change and unmount now goes through a
+    descriptor to the verified parent directory, and a bind mount keeps
+    the flags its source already had when nosuid and friends are added.
+  * Fixed: no_new_privs is set after the privilege drop, before anything
+    runs inside a target, so a setuid binary placed in the tree runs as
+    the user.
+  * Fixed: an isolated session left its mounts shared with the host and
+    mounted its proc by path. Mounts are made private before the chroot
+    and the session's proc is mounted through a descriptor.
+  * Fixed: concurrent mount or umount calls on the same target stacked
+    mounts. Calls on a target are serialized with a lock on its
+    directory; a lock that is not released within five seconds is given
+    up on with an error rather than waited for indefinitely.
+  * Fixed: a mount was left behind, without its flags and still shared,
+    when a step after the mount call failed. It is taken down again.
+  * Fixed: a new per-user directory and a new per-target home are created
+    0700. Existing ones keep their mode.
+  * Fixed: files copied into the target took a symlink's own mode instead
+    of the mode of the file behind it. Setuid bits are never copied.
+  * Fixed: directories are created natively instead of by running
+    mkdir(1) found on the caller's PATH.
+  * Fixed: an environment entry without a name made build-box-do spin
+    forever; such entries are dropped.
+  * Fixed: "build-box delete" did not notice a mount still below a target
+    whose path contains a space, tab, newline or backslash, and would
+    have removed through it.
+  * Fixed: a distro-info failure in "build-box create" was reported as an
+    unknown release; "build-box create -c" crashed.
+  * Changed: "build-box run" takes its options before the target name
+    and passes everything after it to the command as it is, so the
+    command may carry options of its own without a separating "--". A
+    "--" after the target is still accepted. An option placed after the
+    target is no longer read by build-box.
+  * Changed: command lines are parsed alike on glibc and musl, and
+    POSIXLY_CORRECT in the caller's environment no longer changes how
+    build-box-do reads its arguments.
+  * Added: a test suite, run during the package build. C and shell tests
+    live in tests/c, the privileged paths run inside an unprivileged user
+    namespace and skip where none can be created; pytest tests for the
+    Python wrapper live in tests/python. Build-Depends now names
+    python3-pytest. "./configure --enable-coverage" and "make coverage"
+    report line and branch coverage; scripts/musl-build.sh builds and
+    tests against musl in a container.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 19 Sep 2026 00:11:24 +0300
+
 build-box-utils (0.15.0-1) unstable; urgency=medium
 
   * Changed: the generated aept.conf inside the target now sets
