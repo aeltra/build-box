@@ -239,24 +239,48 @@ class BuildBoxTarget:
             #end if
         #end for
 
-        with open("/proc/mounts", "r", encoding="utf-8") as f:
+        mountpoint = cls._mount_below(target_dir)
+        if mountpoint:
+            raise BuildBoxError(
+                "there is something mounted at '{}', aborting."
+                .format(mountpoint)
+            )
+        #end if
+
+        old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        shutil.rmtree(target_dir)
+        signal.signal(signal.SIGINT, old_sig_handler)
+    #end function
+
+    @classmethod
+    def _mount_below(cls, target_dir):
+        """Return the first mount point below target_dir, or None."""
+        # Paths in /proc/mounts are bytes, not text: a file name need not
+        # be valid UTF-8, and the kernel writes space, tab, newline and
+        # backslash as a backslash and three octal digits. Read the file
+        # as bytes, undo the escapes and decode the way Python decodes
+        # every other path, or a target whose path contains a space is
+        # never matched and the check is silent.
+        with open("/proc/mounts", "rb") as f:
             buf = f.read()
 
         for line in buf.splitlines():
             _, mountpoint, _, _, _, _ = line.strip().split()
 
+            mountpoint = os.fsdecode(cls._unescape_mount_path(mountpoint))
             mountpoint = os.path.normpath(os.path.realpath(mountpoint))
             if mountpoint.startswith(target_dir + os.sep):
-                raise BuildBoxError(
-                    "there is something mounted at '{}', aborting."
-                    .format(mountpoint)
-                )
-            #end if
+                return mountpoint
         #end for
 
-        old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        shutil.rmtree(target_dir)
-        signal.signal(signal.SIGINT, old_sig_handler)
+        return None
+    #end function
+
+    @staticmethod
+    def _unescape_mount_path(path):
+        return re.sub(
+            rb"\\([0-7]{3})", lambda m: bytes([int(m.group(1), 8)]), path
+        )
     #end function
 
     @classmethod
