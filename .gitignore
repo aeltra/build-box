@@ -30,6 +30,7 @@ __pycache__
 /missing
 /test-driver
 /build
+/.coverage
 
 # Everything built in tests/c/ is a compiled binary or a harness log with
 # no extension worth listing, so ignore the directory and whitelist the
