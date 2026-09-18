@@ -46,7 +46,7 @@ override_dh_clean:
 	dh_auto_clean
 	rm -f bin/build-box-do Makefile.in aclocal.m4 c-src/Makefile.in compile \
 		config.h.in configure depcomp install-sh missing test-driver \
-		tests/Makefile.in
+		tests/Makefile.in tests/c/Makefile.in tests/python/Makefile.in
 	rm -fr .build lib/build_box_utils.egg-info
 	rm -f VERSION
 	dh_clean

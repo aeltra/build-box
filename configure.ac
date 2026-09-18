@@ -7,5 +7,7 @@ AC_CONFIG_FILES([
  Makefile
  c-src/Makefile
  tests/Makefile
+ tests/c/Makefile
+ tests/python/Makefile
 ])
 AC_OUTPUT

@@ -253,7 +253,7 @@ class BuildBoxTarget:
     #end function
 
     @classmethod
-    def _mount_below(cls, target_dir):
+    def _mount_below(cls, target_dir, mounts="/proc/mounts"):
         """Return the first mount point below target_dir, or None."""
         # Paths in /proc/mounts are bytes, not text: a file name need not
         # be valid UTF-8, and the kernel writes space, tab, newline and
@@ -261,7 +261,7 @@ class BuildBoxTarget:
         # as bytes, undo the escapes and decode the way Python decodes
         # every other path, or a target whose path contains a space is
         # never matched and the check is silent.
-        with open("/proc/mounts", "rb") as f:
+        with open(mounts, "rb") as f:
             buf = f.read()
 
         for line in buf.splitlines():

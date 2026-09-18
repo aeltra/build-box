@@ -89,7 +89,7 @@ class BuildBoxCLI:
 
         try:
             opts, args = getopt.getopt(
-                args, "a:c:hl:r:t:", [
+                args, "a:hl:r:t:", [
                     "arch=",
                     "force",
                     "help",

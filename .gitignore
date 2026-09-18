@@ -11,6 +11,7 @@ __pycache__
 /compile
 /config.h.in
 /configure
+/configure~
 /debian/.debhelper/
 /debian/build-box-ng.debhelper.log
 /debian/build-box-ng.postinst.debhelper
@@ -30,10 +31,18 @@ __pycache__
 /test-driver
 /build
 
-# Everything built in tests/ is a compiled binary or a harness log with no
-# extension worth listing, so ignore the directory and whitelist the sources.
-/tests/*
-!/tests/*.am
-!/tests/*.c
-!/tests/*.h
-!/tests/*.sh
+# Everything built in tests/c/ is a compiled binary or a harness log with
+# no extension worth listing, so ignore the directory and whitelist the
+# sources.
+/tests/c/*
+!/tests/c/*.am
+!/tests/c/*.c
+!/tests/c/*.h
+!/tests/c/*.sh
+/tests/python/*.log
+/tests/python/*.trs
+/tests/python/Makefile
+/tests/python/Makefile.in
+/tests/Makefile
+/tests/Makefile.in
+.pytest_cache

@@ -24,6 +24,7 @@ Homepage = "https://github.com/aeltra/build-box-utils"
 
 [project.optional-dependencies]
 lint = ["flake8"]
+test = ["pytest"]
 
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}
@@ -31,3 +32,8 @@ version = {file = "VERSION"}
 [tool.setuptools.packages.find]
 where = ["lib"]
 namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short -ra"
