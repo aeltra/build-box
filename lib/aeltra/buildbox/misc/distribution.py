@@ -40,7 +40,7 @@ class Distribution:
             )
             return name in releases
         except DistroInfoError as e:
-            BuildBoxError(str(e))
+            raise BuildBoxError(str(e))
     #end function
 
     @staticmethod
