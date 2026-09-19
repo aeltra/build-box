@@ -72,7 +72,7 @@ class BuildBoxCLI:
 
         kwargs = {
             "release":
-                Distribution.latest_release(),
+                None,
             "libc":
                 "musl",
             "arch":
@@ -135,6 +135,11 @@ class BuildBoxCLI:
                     break
             #end for
         #end for
+
+        # Looked up only now, so that printing the help or rejecting a bad
+        # option never needs the release list, which may have to be fetched.
+        if kwargs["release"] is None:
+            kwargs["release"] = Distribution.latest_release()
 
         release, libc, arch = kwargs["release"], kwargs["libc"], kwargs["arch"]
 
