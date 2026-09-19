@@ -1,3 +1,12 @@
+build-box-utils (0.16.4-1) unstable; urgency=medium
+
+  * Fixed: the test suite hung when built under qemu-user emulation, as
+    the arm64 package is. The probe for user namespaces left a process
+    behind that kept the test waiting; the tests that need a namespace
+    now skip there instead.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 19 Sep 2026 20:23:04 +0300
+
 build-box-utils (0.16.3-1) unstable; urgency=medium
 
   * Changed: the package build depends on python3-aeltra-misc,
