@@ -1,3 +1,13 @@
+build-box-utils (0.16.5-1) unstable; urgency=medium
+
+  * Fixed: "build-box create --help" and a "create" with an unknown option
+    failed when the release list was neither cached nor downloadable, as
+    in a build container without network. The latest release is now only
+    looked up after the options have been parsed, and only when no
+    release was given.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 19 Sep 2026 20:44:20 +0300
+
 build-box-utils (0.16.4-1) unstable; urgency=medium
 
   * Fixed: the test suite hung when built under qemu-user emulation, as
