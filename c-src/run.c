@@ -476,6 +476,12 @@ int bbox_run(int argc, char * const argv[])
 
     non_optind = bbox_run_command_index(argc, argv, non_optind);
 
+    /* An invocation error, found before anything is mounted for it. */
+    if(non_optind >= argc) {
+        bbox_perror("run", "missing arguments, nothing to run.\n");
+        goto cleanup_and_exit;
+    }
+
     bbox_path_join(
         &buf, bbox_config_get_target_dir(conf), target, &buf_len
     );
