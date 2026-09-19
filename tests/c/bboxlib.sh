@@ -39,10 +39,19 @@ require_harness() {
 # namespace has setgroups denied by the kernel.  Without subordinate ids
 # the plain form is used and tests needing setgroups skip themselves;
 # see require_setgroups.
+#
+# The probe runs under a time limit and with every descriptor pointed at
+# /dev/null.  Under qemu-user emulation, which is how the arm64 package
+# is built, unshare with a new PID namespace comes back as a failure but
+# leaves a process behind that never exits.  The limit is for a probe
+# that does not return at all; the redirection is for that orphan, which
+# would otherwise inherit the pipe of the $(userns_flags) around this and
+# hold it open, and the caller would wait for an end of file that never
+# comes.  Either way, no user namespace here.
 userns_flags() {
-    if unshare -Urmpfn --map-auto --mount-proc=/proc true 2>/dev/null; then
+    if timeout -k 5 10 unshare -Urmpfn --map-auto --mount-proc=/proc true >/dev/null 2>&1; then
         echo "-Urmpfn --map-auto --mount-proc=/proc"
-    elif unshare -Urmpfn --mount-proc=/proc true 2>/dev/null; then
+    elif timeout -k 5 10 unshare -Urmpfn --mount-proc=/proc true >/dev/null 2>&1; then
         echo "-Urmpfn --mount-proc=/proc"
     else
         return 1
@@ -50,7 +59,8 @@ userns_flags() {
 }
 
 require_userns() {
-    userns_flags >/dev/null || skip "user namespaces are not available"
+    userns_flags >/dev/null \
+        || skip "user namespaces are not available, or the probe for them did not return"
 }
 
 # Inside the namespace: skip unless setgroups() is permitted.
