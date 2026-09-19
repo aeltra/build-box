@@ -5,6 +5,9 @@ Maintainer: Tobias Koch <tobias.koch@gmail.com>
 Build-Depends:
  debhelper (>= 10),
  dh-python,
+ python3-aeltra-distro-info (>= 1.4.2),
+ python3-aeltra-image-gen (>= 1.4.2),
+ python3-aeltra-misc (>= 1.4.2),
  python3-all,
  python3-build,
  python3-installer,
