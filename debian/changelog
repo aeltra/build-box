@@ -1,3 +1,15 @@
+build-box-utils (0.16.2-1) unstable; urgency=medium
+
+  * Changed: sysfs is mounted read-only inside a target. Nothing in a
+    target has business writing below /sys, and a container's own /sys
+    is read-only, which the kernel would not let a writable sysfs be
+    mounted below. proc stays writable.
+  * Fixed: "build-box run" with no command mounted the target's file
+    systems before reporting that there was nothing to run. It is
+    refused first.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 19 Sep 2026 13:41:59 +0300
+
 build-box-utils (0.16.1-1) unstable; urgency=medium
 
   * Fixed: the package build ran the Python tests a second time through
