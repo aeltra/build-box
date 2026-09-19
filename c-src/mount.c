@@ -415,6 +415,12 @@ int bbox_mount_special(const char *sys_root, const char *parent_relpath,
 
     snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
 
+    unsigned long flags = MS_NOSUID | MS_NODEV | MS_NOEXEC;
+
+    /* Nothing inside a target has business writing below /sys. */
+    if(strcmp(filesystemtype, "sysfs") == 0)
+        flags |= MS_RDONLY;
+
     /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
@@ -422,8 +428,7 @@ int bbox_mount_special(const char *sys_root, const char *parent_relpath,
     if(bbox_raise_privileges() == -1)
         goto cleanup_and_exit;
 
-    if(mount(NULL, fd_path, filesystemtype,
-                MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0)
+    if(mount(NULL, fd_path, filesystemtype, flags, NULL) != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));

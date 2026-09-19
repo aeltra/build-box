@@ -86,6 +86,10 @@ done
 [ -e "$t/home/root/RealHome/../../../marker" ] || fail "sanity"
 [ "$(stat -c %a "$t/home/root")" = 700 ] || fail "the per-target home is not 0700"
 [ "$(findmnt -no PROPAGATION "$t/dev")" = private ] || fail "dev is not private"
+case ",$(findmnt -no OPTIONS "$t/sys")," in
+    *,ro,*) ;;
+    *) fail "sys is not read-only: $(findmnt -no OPTIONS "$t/sys")" ;;
+esac
 note "mount mounts dev, proc, sys and the home and makes them private"
 
 "$CMDDRV" mount t || fail "a second mount failed"

@@ -84,10 +84,16 @@ done
 [ "$(propagation root/proc)" = private ] || fail "proc is not private"
 note "proc is mounted nosuid,nodev,noexec and private"
 
+# Nothing inside a target has business writing below /sys, and a
+# read-only sysfs is what a container's own /sys allows to be mounted
+# below it, where a writable one is refused.
 "$MOUNTDRV" special root sysfs "" sys || fail "sysfs mount failed"
 mounted root/sys || fail "sys is not mounted"
-has_option root/sys nosuid || fail "sys lacks nosuid: $(options root/sys)"
-note "sysfs is mounted with the same flags"
+for o in nosuid nodev noexec ro; do
+    has_option root/sys $o || fail "sys lacks $o: $(options root/sys)"
+done
+[ "$(propagation root/sys)" = private ] || fail "sys is not private"
+note "sysfs is mounted nosuid,nodev,noexec, read-only and private"
 
 # ── flags the source already has are kept ───────────────────────────
 #
