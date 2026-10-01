@@ -1,3 +1,14 @@
+build-box-utils (0.17.1-1) unstable; urgency=medium
+
+  * The repository base defaults to the release's mirror from the
+    distribution's mirror list (aeltra-distro-info) instead of a URL
+    compiled in, which was plain http and so never received the
+    credentials from ~/.aeltra/auth.conf. "create" refreshes the
+    mirror list first and falls back to the cached copy with a
+    warning when that fails. --repo-base still overrides it.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Thu, 01 Oct 2026 23:23:19 +0300
+
 build-box-utils (0.17.0-1) unstable; urgency=medium
 
   * New: credentials for protected package archives. If
