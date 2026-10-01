@@ -47,6 +47,10 @@ class Paths:
     #end function
 
     @staticmethod
+    def auth_file():
+        return os.path.join(Paths.homedir(), ".aeltra", "auth.conf")
+
+    @staticmethod
     def target_prefix():
         return os.path.join(
             "/var/lib/build-box/users", "{}".format(os.getuid()), "targets"

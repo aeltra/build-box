@@ -14,6 +14,12 @@ def test_target_prefix_is_per_uid():
         == "/var/lib/build-box/users/{}/targets".format(os.getuid())
 
 
+def test_the_auth_file_is_below_the_home(monkeypatch):
+    monkeypatch.setattr(paths_module.UserInfo, "homedir", lambda: "/h")
+
+    assert Paths.auth_file() == "/h/.aeltra/auth.conf"
+
+
 def test_homedir_and_cache_dir_come_from_userinfo(monkeypatch):
     monkeypatch.setattr(paths_module.UserInfo, "homedir", lambda: "/h")
     monkeypatch.setattr(paths_module.UserInfo, "cache_dir", lambda: "/h/c")

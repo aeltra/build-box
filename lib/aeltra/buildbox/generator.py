@@ -96,7 +96,16 @@ class BuildBoxGenerator(ImageGenerator):
     #end function
 
     def _aept_options(self, sysroot):
-        return ["--cache-dir", self._package_cache_path()]
+        options = ["--cache-dir", self._package_cache_path()]
+
+        # The credentials stay on the host: passed to the aept that
+        # bootstraps the sysroot, never written into it. Inside the
+        # target, aept finds the same file through RealHome.
+        auth_file = Paths.auth_file()
+        if os.path.isfile(auth_file):
+            options += ["--auth-file", auth_file]
+
+        return options
 
     def _host_env(self, sysroot):
         return {"AEPT_CACHE_DIR": self._package_cache_path()}

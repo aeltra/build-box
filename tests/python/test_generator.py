@@ -20,7 +20,18 @@ def generator(monkeypatch, tmp_path):
     monkeypatch.setattr(
         Paths, "cache_dir", staticmethod(lambda: str(tmp_path / "cache"))
     )
+    monkeypatch.setattr(
+        Paths, "homedir", staticmethod(lambda: str(tmp_path / "home"))
+    )
     return BuildBoxGenerator(release="ollie", arch="s390x", libc="musl")
+
+
+def write_auth_file(tmp_path):
+    auth_file = tmp_path / "home" / ".aeltra" / "auth.conf"
+    auth_file.parent.mkdir(parents=True)
+    auth_file.write_text("machine example.org login token password s3cret\n")
+    auth_file.chmod(0o600)
+    return auth_file
 
 
 @pytest.fixture
@@ -74,6 +85,34 @@ def test_aept_is_told_where_the_cache_is(generator, tmp_path):
     cache = str(tmp_path / "cache" / "aeltra" / "pkg-cache" / "ollie" / "s390x" / "musl")
     assert generator._aept_options("/unused") == ["--cache-dir", cache]
     assert generator._host_env("/unused") == {"AEPT_CACHE_DIR": cache}
+
+
+def test_aept_is_given_the_auth_file_when_there_is_one(generator, tmp_path):
+    auth_file = write_auth_file(tmp_path)
+    cache = str(
+        tmp_path / "cache" / "aeltra" / "pkg-cache" / "ollie" / "s390x" /
+        "musl"
+    )
+
+    assert generator._aept_options("/unused") \
+        == ["--cache-dir", cache, "--auth-file", str(auth_file)]
+    assert generator._host_env("/unused") == {"AEPT_CACHE_DIR": cache}
+
+
+def test_the_auth_file_is_not_written_into_the_sysroot(
+        generator, sysroot, tmp_path):
+    write_auth_file(tmp_path)
+
+    generator.prepare(str(sysroot), "mybox")
+
+    # Symlinks point into the target, like .pkg-cache, and dangle here.
+    files = [
+        os.path.join(d, f) for d, _, names in os.walk(sysroot) for f in names
+        if not os.path.islink(os.path.join(d, f))
+    ]
+    assert files
+    leaked = [f for f in files if "s3cret" in open(f, errors="replace").read()]
+    assert leaked == []
 
 
 def test_the_aept_configuration_template_uses_the_shared_cache():
