@@ -62,7 +62,8 @@ class BuildBoxCLI:
                   -l, --libc <libc>      The C runtime to use ("musl" or "glibc").
 
                   --repo-base <url>      Repository base URL up to and including the
-                                         "dists" folder.
+                                         "dists" folder (defaults to the release's
+                                         mirror, see `aeltra-distro-info`).
 
                   --force                Overwrite an existing target with the same name.
                   --no-verify            Do not verify package list signatures.
@@ -82,7 +83,7 @@ class BuildBoxCLI:
             "force":
                 False,
             "repo_base":
-                "http://archive.aeltra.eu/dists",
+                None,
             "verify":
                 True
         }
@@ -160,6 +161,9 @@ class BuildBoxCLI:
                 'release "{}" does not support architecture "{}".'
                 .format(release, arch)
             )
+
+        if kwargs["repo_base"] is None:
+            kwargs["repo_base"] = Distribution.repo_base(release)
 
         if len(args) < 2:
             usage()

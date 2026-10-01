@@ -23,9 +23,14 @@
 # THE SOFTWARE.
 #
 
+import logging
+
 from aeltra.distro.config.distroinfo import DistroInfo
 from aeltra.distro.config.error import DistroInfoError
+from aeltra.error import AeltraError
 from aeltra.buildbox.error import BuildBoxError
+
+LOGGER = logging.getLogger(__name__)
 
 class Distribution:
 
@@ -56,6 +61,28 @@ class Distribution:
                 return releases[1]
             return releases[0]
         except DistroInfoError as e:
+            raise BuildBoxError(str(e))
+    #end function
+
+    @staticmethod
+    def repo_base(release, repo_name="core"):
+        """The base URL of the release's repository, up to and including
+        "dists", from the mirror list. The list is refreshed first, since
+        a cached copy may name a location the archive has left; when that
+        fails, the cached copy is used."""
+        info = DistroInfo()
+
+        try:
+            info.refresh(mirrors=True)
+        except AeltraError as e:
+            LOGGER.warning(
+                "could not refresh the mirror list, using the cached one: {}"
+                .format(e)
+            )
+
+        try:
+            return info.pick_mirror(release=release, repo_name=repo_name)
+        except AeltraError as e:
             raise BuildBoxError(str(e))
     #end function
 

@@ -32,6 +32,10 @@ def known_release(monkeypatch):
     monkeypatch.setattr(Distribution, "valid_libc", staticmethod(lambda r, l: l in ("musl", "glibc")))
     monkeypatch.setattr(Distribution, "valid_arch", staticmethod(lambda r, a, libc="musl": a in ("x86_64", "s390x")))
     monkeypatch.setattr(
+        Distribution, "repo_base",
+        staticmethod(lambda r: "https://mirror-of-" + r + "/dists")
+    )
+    monkeypatch.setattr(
         cli_module.ImageGeneratorUtils, "collect_specfiles",
         staticmethod(lambda r, l, a, *specs: [s + ".resolved" for s in specs])
     )
@@ -45,7 +49,7 @@ def test_create_defaults(target, known_release):
     assert target == [("create", ("t", "base.spec.resolved"), {
         "release": "ollie", "libc": "musl", "arch": "x86_64",
         "target_prefix": "/var/lib/build-box/users/{}/targets".format(os.getuid()),
-        "force": False, "repo_base": "http://archive.aeltra.eu/dists",
+        "force": False, "repo_base": "https://mirror-of-ollie/dists",
         "verify": True,
     })]
 
@@ -67,6 +71,19 @@ def test_create_options(target, known_release, tmp_path):
     assert kwargs["force"] is True
     assert kwargs["verify"] is False
     assert kwargs["target_prefix"] == str(tmp_path)
+
+
+def test_create_with_a_repo_base_does_not_look_up_the_mirror(
+        target, known_release, monkeypatch):
+    def lookup(release):
+        raise AssertionError("the mirror list was consulted")
+
+    monkeypatch.setattr(Distribution, "repo_base", staticmethod(lookup))
+
+    BuildBoxCLI().execute_command(
+        "create", "--repo-base", "https://mine/dists", "t", "a.spec"
+    )
+    assert target[0][2]["repo_base"] == "https://mine/dists"
 
 
 def test_create_normalizes_the_architecture_spelling(target, known_release):
