@@ -1,3 +1,16 @@
+build-box-utils (0.17.0-1) unstable; urgency=medium
+
+  * New: credentials for protected package archives. If
+    ~/.aeltra/auth.conf exists, build-box passes it to aept with
+    --auth-file when it bootstraps a target or installs into one. The
+    file stays on the host and is never written into the sysroot;
+    inside a target, aept finds it through RealHome. The format is
+    apt's auth.conf, e.g.
+    "machine archive.aeltra.eu login token password aeltra_api_...".
+  * Depends on aept (>= 0.9.0), which reads auth files.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Thu, 01 Oct 2026 22:51:36 +0300
+
 build-box-utils (0.16.5-1) unstable; urgency=medium
 
   * Fixed: "build-box create --help" and a "create" with an unknown option
