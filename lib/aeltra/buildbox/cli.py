@@ -61,12 +61,9 @@ class BuildBoxCLI:
                                          (defaults to host arch).
                   -l, --libc <libc>      The C runtime to use ("musl" or "glibc").
 
-                  --repo <name>          Also give the target this repository of the
-                                         release. May be given more than once.
-
-                Each spec is applied with the "core" repository and the "main" pocket,
-                plus what its @repositories and @pockets lines name. The target keeps
-                the sources of every spec and those given with --repo.
+                  --repo <name>          Add this repository of the release to the target
+                                         after all specs have been applied. This may be given
+                                         more than once.
 
                   --force                Overwrite an existing target with the same name.
                   --no-verify            Do not verify package list signatures.
