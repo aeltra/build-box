@@ -1,3 +1,29 @@
+build-box-utils (0.18.0-1) unstable; urgency=medium
+
+  * The sources come from the specs, as in image-gen: each spec is
+    applied with "core" and "main" plus what its @repositories and
+    @pockets lines name. The target keeps the sources of every spec,
+    so a spec that prepares a build environment declares the tools
+    pockets itself; build-essential does. The sources are named
+    <repository>-<pocket>.
+  * "create --repo <name>" gives the target a repository of the release
+    besides, with the pockets the target uses where it has them, and
+    replaces --repo-base. A name the release does not list is refused,
+    naming the ones it has.
+  * "create" fetches the release and the mirror list afresh before it
+    uses them; it used to refresh only the mirror list, and the release
+    list never once it was cached. When that fails, it warns and uses
+    the cached copies. Creating a target needs network access anyway:
+    the package lists of a new target are always downloaded.
+  * Bash completion offers --repo instead of --repo-base and completes
+    the repository names of the release given with -r, or of all
+    releases; -r now completes release names as well.
+  * Depends and Build-Depends on python3-aeltra-distro-info and
+    python3-aeltra-image-gen (>= 1.14.0), which provide the
+    repository sources.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Fri, 02 Oct 2026 13:38:28 +0300
+
 build-box-utils (0.17.1-1) unstable; urgency=medium
 
   * The repository base defaults to the release's mirror from the
