@@ -120,3 +120,26 @@ def test_the_aept_configuration_template_uses_the_shared_cache():
     assert "option cache_dir /.pkg-cache" in conf
     assert "option clean_cache no" in conf
     assert "option ignore_ownership 1" in conf
+
+
+def test_the_target_keeps_the_sources_in_build_box_s_configuration(
+        generator, monkeypatch, tmp_path):
+    from aeltra.distro.config.distroinfo import DistroInfo, Source
+
+    def sources(self, **kwargs):
+        return [
+            Source("{}-{}".format(r, p), r, p, "https://m/{}/{}".format(r, p))
+            for r in kwargs["repositories"] for p in kwargs["pockets"]
+        ]
+
+    monkeypatch.setattr(DistroInfo, "repository_sources", sources)
+    root = tmp_path / "root"
+    (root / "etc" / "aept").mkdir(parents=True)
+
+    generator.finalize_aept_config(str(root), repositories=["extended"])
+
+    conf = (root / "etc" / "aept" / "aept.conf").read_text()
+    assert "src/gz core-main https://m/core/main" in conf
+    assert "src/gz extended-main https://m/extended/main" in conf
+    assert "option cache_dir /.pkg-cache" in conf
+    assert "option clean_cache no" in conf

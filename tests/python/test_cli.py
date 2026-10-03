@@ -32,9 +32,10 @@ def known_release(monkeypatch):
     monkeypatch.setattr(Distribution, "valid_libc", staticmethod(lambda r, l: l in ("musl", "glibc")))
     monkeypatch.setattr(Distribution, "valid_arch", staticmethod(lambda r, a, libc="musl": a in ("x86_64", "s390x")))
     monkeypatch.setattr(
-        Distribution, "repo_base",
-        staticmethod(lambda r: "https://mirror-of-" + r + "/dists")
+        Distribution, "repository_names",
+        staticmethod(lambda r: ["core", "extended", "raspi"])
     )
+    monkeypatch.setattr(Distribution, "refresh", staticmethod(lambda: None))
     monkeypatch.setattr(
         cli_module.ImageGeneratorUtils, "collect_specfiles",
         staticmethod(lambda r, l, a, *specs: [s + ".resolved" for s in specs])
@@ -49,7 +50,7 @@ def test_create_defaults(target, known_release):
     assert target == [("create", ("t", "base.spec.resolved"), {
         "release": "ollie", "libc": "musl", "arch": "x86_64",
         "target_prefix": "/var/lib/build-box/users/{}/targets".format(os.getuid()),
-        "force": False, "repo_base": "https://mirror-of-ollie/dists",
+        "force": False, "repositories": [],
         "verify": True,
     })]
 
@@ -59,7 +60,7 @@ def test_create_options(target, known_release, tmp_path):
 
     BuildBoxCLI().execute_command(
         "create", "-r", "ollie", "-a", "s390x", "-l", "glibc",
-        "--repo-base", "http://mirror/dists", "--force", "--no-verify",
+        "--repo", "extended", "--repo", "raspi", "--force", "--no-verify",
         "-t", str(tmp_path / "link"), "t", "a.spec", "b.spec"
     )
 
@@ -67,23 +68,55 @@ def test_create_options(target, known_release, tmp_path):
     assert args == ("t", "a.spec.resolved", "b.spec.resolved")
     assert kwargs["arch"] == "s390x"
     assert kwargs["libc"] == "glibc"
-    assert kwargs["repo_base"] == "http://mirror/dists"
+    assert kwargs["repositories"] == ["extended", "raspi"]
     assert kwargs["force"] is True
     assert kwargs["verify"] is False
     assert kwargs["target_prefix"] == str(tmp_path)
 
 
-def test_create_with_a_repo_base_does_not_look_up_the_mirror(
+def test_create_refreshes_the_release_data_before_using_it(
         target, known_release, monkeypatch):
-    def lookup(release):
-        raise AssertionError("the mirror list was consulted")
-
-    monkeypatch.setattr(Distribution, "repo_base", staticmethod(lookup))
-
-    BuildBoxCLI().execute_command(
-        "create", "--repo-base", "https://mine/dists", "t", "a.spec"
+    order = []
+    monkeypatch.setattr(
+        Distribution, "refresh", staticmethod(lambda: order.append("refresh"))
     )
-    assert target[0][2]["repo_base"] == "https://mine/dists"
+    monkeypatch.setattr(
+        Distribution, "latest_release",
+        staticmethod(lambda: order.append("latest") or "ollie")
+    )
+
+    BuildBoxCLI().execute_command("create", "t", "a.spec")
+
+    assert order == ["refresh", "latest"]
+
+
+def test_create_help_needs_no_refresh(known_release, monkeypatch):
+    def refresh():
+        raise AssertionError("the release data was fetched")
+
+    monkeypatch.setattr(Distribution, "refresh", staticmethod(refresh))
+
+    with pytest.raises(SystemExit):
+        BuildBoxCLI().execute_command("create", "--help")
+
+
+def test_create_refuses_a_repository_the_release_lacks(
+        target, known_release):
+    with pytest.raises(
+            BuildBoxError,
+            match='has no repository "nope", it has: core, extended, raspi'):
+        BuildBoxCLI().execute_command(
+            "create", "--repo", "nope", "t", "a.spec"
+        )
+    assert target == []
+
+
+def test_create_takes_no_repository_url(target, known_release):
+    with pytest.raises(SystemExit):
+        BuildBoxCLI().execute_command(
+            "create", "--repo-base", "https://mine/dists", "t", "a.spec"
+        )
+    assert target == []
 
 
 def test_create_normalizes_the_architecture_spelling(target, known_release):

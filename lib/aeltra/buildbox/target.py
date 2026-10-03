@@ -99,6 +99,12 @@ class BuildBoxTarget:
             with Sysroot(target_dir):
                 for specfile in specs:
                     image_gen.customize(target_dir, specfile)
+
+            # Every spec ran with its own sources; the target keeps them all,
+            # and the repositories asked for on the command line besides.
+            image_gen.finalize_aept_config(
+                target_dir, repositories=kwargs.get("repositories")
+            )
         except (KeyboardInterrupt, Exception):
             old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
 

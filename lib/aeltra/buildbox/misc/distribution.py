@@ -65,23 +65,23 @@ class Distribution:
     #end function
 
     @staticmethod
-    def repo_base(release, repo_name="core"):
-        """The base URL of the release's repository, up to and including
-        "dists", from the mirror list. The list is refreshed first, since
-        a cached copy may name a location the archive has left; when that
-        fails, the cached copy is used."""
-        info = DistroInfo()
-
+    def refresh():
+        """Fetch the release and mirror lists afresh. Cached copies may lack
+        a release or a repository, or name a location the archive has left.
+        When that fails, the cached copies are used."""
         try:
-            info.refresh(mirrors=True)
+            DistroInfo().refresh(releases=True, mirrors=True)
         except AeltraError as e:
             LOGGER.warning(
-                "could not refresh the mirror list, using the cached one: {}"
-                .format(e)
+                "could not refresh the release and mirror lists, using the "
+                "cached ones: {}".format(e)
             )
+    #end function
 
+    @staticmethod
+    def repository_names(release):
         try:
-            return info.pick_mirror(release=release, repo_name=repo_name)
+            return DistroInfo().repository_names(release=release)
         except AeltraError as e:
             raise BuildBoxError(str(e))
     #end function

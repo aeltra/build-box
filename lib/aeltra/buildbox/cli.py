@@ -61,9 +61,12 @@ class BuildBoxCLI:
                                          (defaults to host arch).
                   -l, --libc <libc>      The C runtime to use ("musl" or "glibc").
 
-                  --repo-base <url>      Repository base URL up to and including the
-                                         "dists" folder (defaults to the release's
-                                         mirror, see `aeltra-distro-info`).
+                  --repo <name>          Also give the target this repository of the
+                                         release. May be given more than once.
+
+                Each spec is applied with the "core" repository and the "main" pocket,
+                plus what its @repositories and @pockets lines name. The target keeps
+                the sources of every spec and those given with --repo.
 
                   --force                Overwrite an existing target with the same name.
                   --no-verify            Do not verify package list signatures.
@@ -82,8 +85,8 @@ class BuildBoxCLI:
                 Paths.target_prefix(),
             "force":
                 False,
-            "repo_base":
-                None,
+            "repositories":
+                [],
             "verify":
                 True
         }
@@ -97,7 +100,7 @@ class BuildBoxCLI:
                     "libc=",
                     "no-verify",
                     "release=",
-                    "repo-base=",
+                    "repo=",
                     "targets="
                 ]
             )
@@ -128,8 +131,8 @@ class BuildBoxCLI:
                 if case("--force"):
                     kwargs["force"] = True
                     break
-                if case("--repo-base"):
-                    kwargs["repo_base"] = v.strip()
+                if case("--repo"):
+                    kwargs["repositories"].append(v.strip())
                     break
                 if case("--no-verify"):
                     kwargs["verify"] = False
@@ -137,8 +140,10 @@ class BuildBoxCLI:
             #end for
         #end for
 
-        # Looked up only now, so that printing the help or rejecting a bad
-        # option never needs the release list, which may have to be fetched.
+        # Fetched only now, so that printing the help or rejecting a bad
+        # option never needs the network.
+        Distribution.refresh()
+
         if kwargs["release"] is None:
             kwargs["release"] = Distribution.latest_release()
 
@@ -162,8 +167,14 @@ class BuildBoxCLI:
                 .format(release, arch)
             )
 
-        if kwargs["repo_base"] is None:
-            kwargs["repo_base"] = Distribution.repo_base(release)
+        known = Distribution.repository_names(release)
+        for name in kwargs["repositories"]:
+            if name not in known:
+                raise BuildBoxError(
+                    'release "{}" has no repository "{}", it has: {}.'
+                    .format(release, name, ", ".join(known))
+                )
+        #end for
 
         if len(args) < 2:
             usage()

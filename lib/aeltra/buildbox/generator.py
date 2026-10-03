@@ -35,20 +35,16 @@ class BuildBoxGenerator(ImageGenerator):
 
     AEPT_CONFIG_TEMPLATE = textwrap.dedent(
         """\
-        src/gz main {repo_base}/{release}/core/{arch}/{libc}/main
-        src/gz tools {repo_base}/{release}/core/{arch}/{libc}/tools/{host_arch}
-        src/gz cross-tools {repo_base}/{release}/core/{arch}/{libc}/cross-tools/{host_arch}
+        {sources}
 
-        arch {arch}
-        arch all
-        arch tools
+        {archs}
 
         option cache_dir /.pkg-cache
         option clean_cache no
         option ignore_ownership 1
 
         {opt_check_sig}
-        """  # noqa
+        """
     )
 
     ETC_TARGET_TEMPLATE = textwrap.dedent(

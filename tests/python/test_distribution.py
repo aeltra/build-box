@@ -89,44 +89,45 @@ def test_valid_libc_and_arch_raise_for_an_unknown_release(ollie):
         Distribution.valid_arch("nope", "x86_64")
 
 
-# ── repo_base ────────────────────────────────────────────────────────
+# ── refresh and repository_names ─────────────────────────────────────
 
-def test_repo_base_refreshes_the_mirror_list_and_picks_the_mirror(monkeypatch):
+def test_refresh_fetches_both_lists(monkeypatch):
     calls = []
     monkeypatch.setattr(
         DistroInfo, "refresh", lambda self, **kwargs: calls.append(kwargs)
     )
-    monkeypatch.setattr(
-        DistroInfo, "pick_mirror",
-        lambda self, *, release, repo_name:
-            "https://{}/{}".format(release, repo_name)
-    )
 
-    assert Distribution.repo_base("ollie") == "https://ollie/core"
-    assert calls == [{"mirrors": True}]
+    Distribution.refresh()
+
+    assert calls == [{"releases": True, "mirrors": True}]
 
 
-def test_repo_base_falls_back_to_the_cached_list(monkeypatch, caplog):
+def test_refresh_falls_back_to_the_cached_lists(monkeypatch, caplog):
     def offline(self, **kwargs):
         raise DownloadError("network unreachable")
 
     monkeypatch.setattr(DistroInfo, "refresh", offline)
-    monkeypatch.setattr(
-        DistroInfo, "pick_mirror",
-        lambda self, *, release, repo_name: "https://cached/dists"
-    )
 
-    assert Distribution.repo_base("ollie") == "https://cached/dists"
-    assert "using the cached one" in caplog.text
+    Distribution.refresh()
+
+    assert "using the cached ones" in caplog.text
     assert "network unreachable" in caplog.text
 
 
-def test_repo_base_raises_when_there_is_no_mirror(monkeypatch):
-    def none_listed(self, *, release, repo_name):
-        raise DistroInfoError("repo 'core' has no mirror information listed.")
+def test_repository_names_come_from_distro_info(monkeypatch):
+    monkeypatch.setattr(
+        DistroInfo, "repository_names",
+        lambda self, *, release: ["core", "extended"]
+    )
 
-    monkeypatch.setattr(DistroInfo, "refresh", lambda self, **kwargs: None)
-    monkeypatch.setattr(DistroInfo, "pick_mirror", none_listed)
+    assert Distribution.repository_names("ollie") == ["core", "extended"]
 
-    with pytest.raises(BuildBoxError, match="no mirror information"):
-        Distribution.repo_base("ollie")
+
+def test_repository_names_raises_when_distro_info_fails(monkeypatch):
+    def unknown(self, *, release):
+        raise DistroInfoError("release 'ollie' not found")
+
+    monkeypatch.setattr(DistroInfo, "repository_names", unknown)
+
+    with pytest.raises(BuildBoxError, match="not found"):
+        Distribution.repository_names("ollie")

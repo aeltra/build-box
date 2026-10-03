@@ -286,6 +286,9 @@ class RecordingGenerator:
         if specfile == "boom":
             raise RuntimeError("customize failed")
 
+    def finalize_aept_config(self, target_dir, repositories=None):
+        self.calls.append(("finalize", target_dir, repositories))
+
 
 @pytest.fixture
 def create_stubs(monkeypatch, quiet_sysroot):
@@ -316,9 +319,23 @@ def test_create_prepares_then_customizes_inside_the_mounted_sysroot(
         ("prepare", target_dir, "t"),
         ("customize", target_dir, "one.spec"),
         ("customize", target_dir, "two.spec"),
+        ("finalize", target_dir, None),
     ]
     assert QuietSysroot.calls == ["enter", "exit"]
     assert create_stubs == []
+
+
+def test_create_gives_the_target_the_repositories_asked_for(
+        tmp_path, create_stubs):
+    prefix = tmp_path / "targets"
+
+    BuildBoxTarget.create(
+        "t", "one.spec", target_prefix=str(prefix),
+        repositories=["extended"]
+    )
+
+    assert RecordingGenerator.calls[-1] \
+        == ("finalize", str(prefix / "t"), ["extended"])
 
 
 def test_create_refuses_an_existing_populated_target(tmp_path, create_stubs):
