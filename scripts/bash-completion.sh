@@ -22,16 +22,51 @@
 # THE SOFTWARE.
 #
 
+# The repository names of the release given with -r/--release, or of every
+# known release when none is given yet.
+_build_box_repositories() {
+    local _releases=""
+    local _i=0
+
+    while [ "$_i" -lt "${#COMP_WORDS[*]}" ]; do
+        case "${COMP_WORDS[$_i]}" in
+            -r|--release)
+                case "${COMP_WORDS[$(($_i+1))]}" in
+                    =)
+                        _releases="${COMP_WORDS[$(($_i+2))]}"
+                        ;;
+                    *)
+                        _releases="${COMP_WORDS[$(($_i+1))]}"
+                        ;;
+                esac
+                ;;
+        esac
+        _i=$(($_i+1))
+    done
+
+    if [ -z "$_releases" ]; then
+        _releases=$(
+            aeltra-distro-info list --supported --unsupported --unstable \
+                2>/dev/null
+        )
+    fi
+
+    local _release
+    for _release in $_releases; do
+        aeltra-distro-info repositories "$_release" 2>/dev/null
+    done | sort -u
+}
+
 # Return the argument placeholder for an option of the given subcommand,
 # or nothing if the option takes no argument.
 _build_box_opt_takes_arg() {
     case "$1" in
         create)
             case "$2" in
-                -r|--release)  echo '<name>'   ;;
+                -r|--release)  echo '<release>' ;;
                 -a|--arch)     echo '<arch>'   ;;
                 -l|--libc)     echo '<libc>'   ;;
-                --repo-base)   echo '<url>'    ;;
+                --repo)        echo '<repo>'   ;;
                 -t|--targets)  echo '<dir>'    ;;
             esac
             ;;
@@ -99,6 +134,26 @@ _build_box_arg_complete() {
             COMPREPLY=(
                 $(
                     compgen -W "musl glibc" -- ${COMP_WORDS[COMP_CWORD]}
+                )
+            )
+            return
+            ;;
+        '<release>')
+            COMPREPLY=(
+                $(
+                    compgen -W "$(
+                        aeltra-distro-info list \
+                            --supported --unsupported --unstable 2>/dev/null
+                    )" -- ${COMP_WORDS[COMP_CWORD]}
+                )
+            )
+            return
+            ;;
+        '<repo>')
+            COMPREPLY=(
+                $(
+                    compgen -W "$(_build_box_repositories)" \
+                        -- ${COMP_WORDS[COMP_CWORD]}
                 )
             )
             return
@@ -191,7 +246,7 @@ _build_box_opt_complete() {
 
     case "${COMP_WORDS[1]}" in
         create)
-            _opts="$_opts -r --release -a --arch -l --libc --force --repo-base --no-verify"
+            _opts="$_opts -r --release -a --arch -l --libc --force --repo --no-verify"
             ;;
         delete|list)
             _opts="$_opts"
