@@ -1,3 +1,11 @@
+build-box-utils (0.18.1-1) unstable; urgency=medium
+
+  * The help text of "create" describes --repo as adding the repository
+    after all specs have been applied, and no longer explains how the
+    sources come from the specs.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 03 Oct 2026 21:39:09 +0300
+
 build-box-utils (0.18.0-1) unstable; urgency=medium
 
   * The sources come from the specs, as in image-gen: each spec is
