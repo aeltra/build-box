@@ -90,14 +90,20 @@ def test_create_refreshes_the_release_data_before_using_it(
     assert order == ["refresh", "latest"]
 
 
-def test_create_help_needs_no_refresh(known_release, monkeypatch):
+@pytest.mark.parametrize("args", [
+    ["--help"],
+    ["--frobnicate"],
+    [],
+    ["t"],
+])
+def test_create_help_needs_no_refresh(known_release, monkeypatch, args):
     def refresh():
         raise AssertionError("the release data was fetched")
 
     monkeypatch.setattr(Distribution, "refresh", staticmethod(refresh))
 
     with pytest.raises(SystemExit):
-        BuildBoxCLI().execute_command("create", "--help")
+        BuildBoxCLI().execute_command("create", *args)
 
 
 def test_create_refuses_a_repository_the_release_lacks(

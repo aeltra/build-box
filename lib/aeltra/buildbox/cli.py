@@ -137,8 +137,12 @@ class BuildBoxCLI:
             #end for
         #end for
 
-        # Fetched only now, so that printing the help or rejecting a bad
-        # option never needs the network.
+        if len(args) < 2:
+            usage()
+            sys.exit(EXIT_ERROR)
+
+        # Fetched only now, so that printing the help, rejecting a bad option
+        # or a missing argument never needs the network.
         Distribution.refresh()
 
         if kwargs["release"] is None:
@@ -172,10 +176,6 @@ class BuildBoxCLI:
                     .format(release, name, ", ".join(known))
                 )
         #end for
-
-        if len(args) < 2:
-            usage()
-            sys.exit(EXIT_ERROR)
 
         # We collect specfiles here so that we can error out early if there is
         # a problem with one of them.
