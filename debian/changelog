@@ -1,3 +1,11 @@
+build-box-utils (0.18.2-1) unstable; urgency=medium
+
+  * "create" without a target name or a spec prints its help text
+    before it refreshes the release and mirror lists, instead of
+    fetching them first, as --help and an unknown option already did.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sun, 04 Oct 2026 11:15:42 +0300
+
 build-box-utils (0.18.1-1) unstable; urgency=medium
 
   * The help text of "create" describes --repo as adding the repository
