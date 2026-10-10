@@ -1,7 +1,11 @@
 # -*- encoding: utf-8 -*-
 
+import fcntl
 import json
 import os
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -45,6 +49,44 @@ def rmtree_recorder(monkeypatch):
     removed = []
     monkeypatch.setattr(target_module.shutil, "rmtree", removed.append)
     return removed
+
+
+def enter_userns(request):
+    """Run the calling test again inside a user and mount namespace, the
+    way enter_userns in ../c/bboxlib.sh does for the shell tests. Returns
+    True in the inner run, which does the work. The outer run asserts that
+    the inner one passed and returns False, or skips without namespaces."""
+    if os.environ.get("BBOX_TEST_INNER") == "1":
+        return True
+
+    # Output to /dev/null and a time limit, for the same reasons as
+    # userns_flags in ../c/bboxlib.sh.
+    probe = subprocess.run(
+        ["timeout", "-k", "5", "10", "unshare", "-Urm", "true"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    if probe.returncode != 0:
+        pytest.skip("user namespaces are not available")
+
+    inner = subprocess.run(
+        ["timeout", "-k", "5", "120", "unshare", "-Urm",
+         sys.executable, "-m", "pytest", "-p", "no:cacheprovider",
+         request.node.nodeid],
+        cwd=str(request.config.rootpath),
+        env=dict(os.environ, BBOX_TEST_INNER="1"),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True
+    )
+    if inner.returncode != 0:
+        pytest.fail(inner.stdout, pytrace=False)
+    return False
+
+
+def hold_lock(path):
+    """Take the lock build-box-do takes on a target, see bbox_lock_dir()."""
+    fd = os.open(str(path), os.O_RDONLY | os.O_DIRECTORY)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
 
 
 # ── target names ─────────────────────────────────────────────────────
@@ -184,6 +226,147 @@ def test_delete_validates_every_name_before_touching_anything(
         BuildBoxTarget.delete(["good", "../etc"], target_prefix=str(tmp_path))
 
     assert rmtree_recorder == []
+
+
+def test_delete_refuses_a_populated_real_home_of_any_user(
+        tmp_path, quiet_sysroot, rmtree_recorder):
+    # build-box-do unmounts the RealHome of the user name it runs under;
+    # one left behind by a renamed account counts all the same.
+    (tmp_path / "t" / "home" / "old" / "RealHome" / "f").mkdir(parents=True)
+    (tmp_path / "t" / "home" / "new" / "RealHome").mkdir(parents=True)
+
+    with pytest.raises(BuildBoxError,
+            match="'home/old/RealHome' subdirectory is not empty"):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert rmtree_recorder == []
+
+
+def test_delete_looks_for_mounts_below_the_resolved_prefix(
+        tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
+    # /proc/mounts names mount points by their resolved path, so a guard
+    # given the path through a symlink -- /var/lib/build-box moved to /srv,
+    # say -- would never see one.
+    (tmp_path / "real" / "t").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    looked_below = []
+    monkeypatch.setattr(
+        BuildBoxTarget, "_mount_below",
+        classmethod(lambda cls, d, mounts="/proc/mounts":
+            looked_below.append(d))
+    )
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path / "link"))
+
+    resolved = str(tmp_path.resolve() / "real" / "t")
+    assert looked_below == [resolved]
+    assert rmtree_recorder == [resolved]
+
+
+def test_delete_refuses_a_target_that_is_a_symlink(
+        tmp_path, quiet_sysroot, rmtree_recorder):
+    # Only the prefix is resolved. A target that points elsewhere must not
+    # take the delete with it.
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "t").symlink_to(tmp_path / "elsewhere")
+
+    with pytest.raises(BuildBoxError):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert rmtree_recorder == []
+    assert (tmp_path / "elsewhere").is_dir()
+
+
+def test_delete_gives_up_on_a_lock_held_by_someone_else(
+        tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
+    (tmp_path / "t").mkdir()
+    fd = hold_lock(tmp_path / "t")
+    naps = []
+    monkeypatch.setattr(time, "sleep", naps.append)
+
+    try:
+        with pytest.raises(BuildBoxError,
+                match="another process has been holding it for 5 seconds"):
+            BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+    finally:
+        os.close(fd)
+
+    assert rmtree_recorder == []
+    assert naps == [0.2] * 25
+
+
+def test_delete_leaves_alone_a_target_that_was_replaced_while_it_waited(
+        tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
+    target_dir = tmp_path / "t"
+    target_dir.mkdir()
+    fd = hold_lock(target_dir)
+
+    def replace_target(seconds):
+        # While the delete waits for the lock: whoever holds it deletes
+        # the target, a create makes a new one, and the lock is released.
+        # The lock the delete then gets is the old target's.
+        nonlocal fd
+        if fd != -1:
+            target_dir.rmdir()
+            (target_dir / "new").mkdir(parents=True)
+            os.close(fd)
+            fd = -1
+
+    monkeypatch.setattr(time, "sleep", replace_target)
+
+    with pytest.raises(BuildBoxError, match="replaced while waiting"):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert rmtree_recorder == []
+    assert (target_dir / "new").is_dir()
+
+
+def test_delete_holds_the_lock_a_concurrent_mount_needs(
+        tmp_path, quiet_sysroot, monkeypatch, request):
+    if not enter_userns(request):
+        return
+
+    target_dir = tmp_path / "t"
+    real_home_mp = target_dir / "home" / "u" / "RealHome"
+    for d in ["dev", "proc", "sys", "usr/bin"]:
+        (target_dir / d).mkdir(parents=True)
+    real_home_mp.mkdir(parents=True)
+    real_home = tmp_path / "home"
+    real_home.mkdir()
+    (real_home / "canary").write_text("precious\n")
+
+    mount_below = BuildBoxTarget._mount_below
+
+    def mount_below_then_login(cls, d, mounts="/proc/mounts"):
+        found = mount_below(d, mounts)
+
+        # Right after the guard looked, a `build-box login t` comes along.
+        # build-box-do mounts the real home only once it has the target's
+        # lock; while somebody else holds it, it waits and mounts nothing.
+        fd = os.open(str(target_dir), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            subprocess.run(
+                ["mount", "--bind", str(real_home), str(real_home_mp)],
+                check=True
+            )
+        except BlockingIOError:
+            pass
+        finally:
+            os.close(fd)
+
+        return found
+
+    monkeypatch.setattr(
+        BuildBoxTarget, "_mount_below", classmethod(mount_below_then_login)
+    )
+
+    try:
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+    finally:
+        assert (real_home / "canary").read_text() == "precious\n"
+
+    assert not target_dir.exists()
 
 
 # ── list and info ────────────────────────────────────────────────────

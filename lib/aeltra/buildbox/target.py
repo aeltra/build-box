@@ -23,6 +23,7 @@
 # THE SOFTWARE.
 #
 
+import fcntl
 import json
 import os
 import re
@@ -30,6 +31,7 @@ import subprocess
 import shutil
 import signal
 import sys
+import time
 
 from aeltra.buildbox.error import BuildBoxError
 from aeltra.buildbox.generator import BuildBoxGenerator
@@ -37,6 +39,9 @@ from aeltra.buildbox.misc.paths import Paths
 from aeltra.buildbox.sysroot import Sysroot
 
 class BuildBoxTarget:
+
+    LOCK_WAIT_SECS  = 5
+    LOCK_POLL_MSECS = 200
 
     @classmethod
     def init(cls):
@@ -226,7 +231,9 @@ class BuildBoxTarget:
     def _delete(cls, target_name, **kwargs):
         target_prefix = kwargs.get("target_prefix", Paths.target_prefix())
 
-        target_dir = os.path.normpath(os.path.join(target_prefix, target_name))
+        target_dir = os.path.normpath(
+            os.path.join(os.path.realpath(target_prefix), target_name)
+        )
         if not os.path.isdir(target_dir):
             raise BuildBoxError("target '{}' not found.".format(target_name))
 
@@ -234,28 +241,99 @@ class BuildBoxTarget:
         sysroot.terminate_processes()
         sysroot.umount_all()
 
-        for subdir in ["dev", "proc", "sys"]:
-            full_path = os.path.join(target_dir, subdir)
+        lock_fd = cls._lock_target(target_dir)
 
-            if os.path.exists(full_path) and os.listdir(full_path):
+        try:
+            try:
+                same = os.path.samestat(
+                    os.fstat(lock_fd), os.lstat(target_dir)
+                )
+            except FileNotFoundError:
+                same = False
+
+            if not same:
                 raise BuildBoxError(
-                    "the '{}' subdirectory is not empty, aborting."
-                    .format(subdir)
+                    "target '{}' was removed or replaced while waiting for "
+                    "its lock, aborting.".format(target_name)
                 )
             #end if
-        #end for
 
-        mountpoint = cls._mount_below(target_dir)
-        if mountpoint:
-            raise BuildBoxError(
-                "there is something mounted at '{}', aborting."
-                .format(mountpoint)
+            subdirs = ["dev", "proc", "sys"]
+
+            home_dir = os.path.join(target_dir, "home")
+            if os.path.isdir(home_dir):
+                subdirs += [
+                    os.path.join("home", user, "RealHome")
+                    for user in sorted(os.listdir(home_dir))
+                ]
+            #end if
+
+            for subdir in subdirs:
+                full_path = os.path.join(target_dir, subdir)
+
+                if os.path.isdir(full_path) and os.listdir(full_path):
+                    raise BuildBoxError(
+                        "the '{}' subdirectory is not empty, aborting."
+                        .format(subdir)
+                    )
+                #end if
+            #end for
+
+            mountpoint = cls._mount_below(target_dir)
+            if mountpoint:
+                raise BuildBoxError(
+                    "there is something mounted at '{}', aborting."
+                    .format(mountpoint)
+                )
+            #end if
+
+            old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+            try:
+                shutil.rmtree(target_dir)
+            finally:
+                signal.signal(signal.SIGINT, old_sig_handler)
+        finally:
+            os.close(lock_fd)
+        #end try
+    #end function
+
+    @classmethod
+    def _lock_target(cls, target_dir):
+        """Take the lock build-box-do takes on a target before it mounts or
+        unmounts below it, see bbox_lock_dir() in c-src/util.c. Returns the
+        descriptor that holds it; closing it releases the lock."""
+        try:
+            fd = os.open(
+                target_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
             )
-        #end if
+        except OSError as e:
+            raise BuildBoxError(
+                "could not open '{}': {}.".format(target_dir, e.strerror)
+            )
 
-        old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        shutil.rmtree(target_dir)
-        signal.signal(signal.SIGINT, old_sig_handler)
+        tries = cls.LOCK_WAIT_SECS * 1000 // cls.LOCK_POLL_MSECS
+
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fd
+            except BlockingIOError:
+                if tries == 0:
+                    break
+                tries -= 1
+                time.sleep(cls.LOCK_POLL_MSECS / 1000)
+            except OSError as e:
+                os.close(fd)
+                raise BuildBoxError(
+                    "could not lock '{}': {}.".format(target_dir, e.strerror)
+                )
+        #end while
+
+        os.close(fd)
+        raise BuildBoxError(
+            "could not lock '{}': another process has been holding it for "
+            "{} seconds.".format(target_dir, cls.LOCK_WAIT_SECS)
+        )
     #end function
 
     @classmethod
