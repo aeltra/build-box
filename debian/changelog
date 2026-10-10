@@ -1,3 +1,19 @@
+build-box-utils (0.18.3-1) unstable; urgency=medium
+
+  * Fixed: "build-box delete" looked for mounts below a target without
+    holding the target's lock, so a "build-box login" starting right
+    after could mount the real home, which the delete then removed
+    through. The delete now holds the lock from its checks until the
+    target is gone, giving up after five seconds like build-box-do, and
+    leaves a target alone that was replaced while it waited.
+  * Fixed: "build-box delete" refuses a target in which the RealHome of
+    any user is not empty, as it already did for dev, proc and sys.
+  * Fixed: "build-box delete" did not see mounts below a target when the
+    target prefix was reached through a symlink. The prefix is resolved
+    now; a target that is itself a symlink is refused.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sat, 10 Oct 2026 14:16:01 +0300
+
 build-box-utils (0.18.2-1) unstable; urgency=medium
 
   * "create" without a target name or a spec prints its help text
