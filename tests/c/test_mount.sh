@@ -84,6 +84,18 @@ done
 [ "$(propagation root/proc)" = private ] || fail "proc is not private"
 note "proc is mounted nosuid,nodev,noexec and private"
 
+# A target's proc shows only the caller's own processes. Kernels before
+# 5.8 do not know hidepid=invisible, and there proc is mounted without it.
+mkdir "$work/probe"
+if mount -t proc -o hidepid=invisible none "$work/probe" 2>/dev/null; then
+    umount "$work/probe"
+    has_option root/proc hidepid=invisible \
+        || fail "proc lacks hidepid=invisible: $(options root/proc)"
+    note "proc is mounted with hidepid=invisible"
+else
+    note "the kernel does not know hidepid=invisible, proc is mounted without it"
+fi
+
 # Nothing inside a target has business writing below /sys, and a
 # read-only sysfs is what a container's own /sys allows to be mounted
 # below it, where a writable one is refused.

@@ -55,6 +55,9 @@ void bbox_mount_usage()
         "  -m, --mount <fstype>  Mount 'dev', 'proc', 'sys' or 'home'. If this    \n"
         "                        option is not specified then the default is to   \n"
         "                        mount all of them.                               \n"
+        "                        'proc' shows only your own processes. On         \n"
+        "                        kernels older than 5.8, it shows what the        \n"
+        "                        host's /proc shows.                              \n"
         "                                                                         \n"
     );
 }
@@ -422,13 +425,29 @@ int bbox_mount_special(const char *sys_root, const char *parent_relpath,
         flags |= MS_RDONLY;
 
     /*
+     * A target's proc shows only the caller's own processes, whatever the
+     * host's /proc shows. Kernels before 5.8 refuse "invisible" or ignore
+     * it, and proc is mounted without it there: on those kernels, a new proc
+     * mount shares the options of the host's /proc anyway.
+     */
+    const char *data = NULL;
+
+    if(strcmp(filesystemtype, "proc") == 0)
+        data = "hidepid=invisible";
+
+    /*
      * We need to be running mount as root, so we briefly raise privileges to
      * drop them again immediately after.
      */
     if(bbox_raise_privileges() == -1)
         goto cleanup_and_exit;
 
-    if(mount(NULL, fd_path, filesystemtype, flags, NULL) != 0)
+    int mounted = mount(NULL, fd_path, filesystemtype, flags, data);
+
+    if(mounted != 0 && errno == EINVAL && data != NULL)
+        mounted = mount(NULL, fd_path, filesystemtype, flags, NULL);
+
+    if(mounted != 0)
     {
         bbox_perror("mount", "failed to mount %s on %s: %s.\n",
                 filesystemtype, target, strerror(errno));
