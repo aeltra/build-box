@@ -105,6 +105,7 @@ int bbox_raise_privileges();
 int bbox_drop_privileges();
 int bbox_no_new_privs();
 int bbox_reset_supplementary_groups();
+int bbox_close_dir_fds(const char *module);
 
 int bbox_check_user_in_group_build_box();
 int bbox_isdir_and_owned_by(const char *module, const char *dir, uid_t uid);

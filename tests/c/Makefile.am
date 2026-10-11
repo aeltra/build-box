@@ -147,6 +147,7 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 dist_check_SCRIPTS = \
     test_commands.sh \
     test_group_check.sh \
+    test_inherited_fds.sh \
     test_init_user_dir.sh \
     test_isolate.sh \
     test_isolate_proc.sh \

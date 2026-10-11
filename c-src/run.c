@@ -241,7 +241,8 @@ int bbox_runas_user_chrooted(const char *sys_root, int argc,
     if(bbox_raise_privileges() == -1)
         return BBOX_ERR_RUNTIME;
 
-    if(bbox_reset_supplementary_groups() == -1) {
+    if(bbox_reset_supplementary_groups() == -1 ||
+            bbox_close_dir_fds("bbox_runas_user_chrooted") == -1) {
         bbox_lower_privileges();
         return BBOX_ERR_RUNTIME;
     }

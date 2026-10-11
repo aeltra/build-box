@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -387,7 +388,8 @@ int bbox_login_sh_chrooted(char *sys_root, char *home_dir)
     if(bbox_raise_privileges() == -1)
         return -1;
 
-    if(bbox_reset_supplementary_groups() == -1) {
+    if(bbox_reset_supplementary_groups() == -1 ||
+            bbox_close_dir_fds("bbox_login_sh_chrooted") == -1) {
         bbox_lower_privileges();
         return -1;
     }
@@ -654,6 +656,67 @@ int bbox_no_new_privs()
         return -1;
     }
 
+    return 0;
+}
+
+int bbox_close_dir_fds(const char *module)
+{
+    struct dirent *entry;
+    struct stat st;
+    DIR *dir;
+    int null_fd = -1;
+    int self;
+
+    /*
+     * A directory descriptor inherited from the caller survives chroot(),
+     * and fchdir() or /proc/self/fd/N lead back out of the target through
+     * it. Close those before entering the target, or point them at
+     * /dev/null for stdin, stdout and stderr, so their numbers are not
+     * handed out again. Any other descriptor gives access to one object
+     * the caller chose to pass on, so pipes, files and sockets stay open.
+     */
+    if((dir = opendir("/proc/self/fd")) == NULL) {
+        bbox_perror(module, "could not list open file descriptors: %s.\n",
+                strerror(errno));
+        return -1;
+    }
+
+    self = dirfd(dir);
+
+    while((entry = readdir(dir)) != NULL) {
+        char *end = NULL;
+        long fd = strtol(entry->d_name, &end, 10);
+
+        if(end == entry->d_name || *end != '\0' || fd == self)
+            continue;
+        if(fstat((int) fd, &st) == -1 || !S_ISDIR(st.st_mode))
+            continue;
+
+        if(fd > STDERR_FILENO) {
+            close((int) fd);
+            continue;
+        }
+
+        if(null_fd == -1 && (null_fd = open("/dev/null",
+                        O_RDWR | O_CLOEXEC)) == -1) {
+            bbox_perror(module, "could not open '/dev/null': %s.\n",
+                    strerror(errno));
+            closedir(dir);
+            return -1;
+        }
+
+        if(dup2(null_fd, (int) fd) == -1) {
+            bbox_perror(module, "could not replace descriptor %ld: %s.\n",
+                    fd, strerror(errno));
+            close(null_fd);
+            closedir(dir);
+            return -1;
+        }
+    }
+
+    if(null_fd != -1)
+        close(null_fd);
+    closedir(dir);
     return 0;
 }
 

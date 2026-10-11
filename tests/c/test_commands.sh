@@ -190,6 +190,16 @@ echo 'exit 0' | "$CMDDRV" login t || fail "login with mounts failed"
 mounted "$t/home/root/RealHome" || fail "login did not mount the home"
 note "login mounts the target first"
 
+# The login path closes inherited directory descriptors like the run
+# path does, see test_inherited_fds.sh.  proc is still mounted from the
+# login above.
+mkdir "$work/outside"
+echo "host secret" > "$work/outside/secret"
+out=$(echo 'read l < /proc/self/fd/3/secret; echo "$l"' \
+    | "$CMDDRV" login --no-mount --no-file-copy t 3<"$work/outside" 2>/dev/null)
+[ -z "$out" ] || fail "a login session read outside the target: '$out'"
+note "login does not pass a directory descriptor into the session"
+
 # ── a target that is not ready ───────────────────────────────────────
 
 # What a create leaves while it runs, or when it failed: everything but
