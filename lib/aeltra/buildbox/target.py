@@ -145,16 +145,19 @@ class BuildBoxTarget:
             return
 
         for entry in sorted(os.listdir(target_prefix)):
-            machine = "defunct"
-            libc    = "unknown"
+            target_dir = os.path.join(target_prefix, entry)
 
-            if not os.path.isdir(os.path.join(target_prefix, entry)):
+            if not os.path.isdir(target_dir):
+                continue
+
+            if not cls._is_ready(target_dir):
+                print("{} (incomplete)".format(entry))
                 continue
 
             shell_found = False
 
             for prefix in ["usr", "tools"]:
-                shell = os.path.join(target_prefix, entry, prefix, "bin", "sh")
+                shell = os.path.join(target_dir, prefix, "bin", "sh")
                 if os.path.exists(shell):
                     shell_found = True
                     break

@@ -435,11 +435,27 @@ def test_list_marks_targets_without_a_shell_as_defunct(tmp_path, capsys):
     (tmp_path / "tools" / "tools" / "bin" / "sh").touch()
     (tmp_path / "dead").mkdir()
     (tmp_path / "afile").touch()
+    for name in ["alive", "tools", "dead"]:
+        mark_ready(tmp_path / name)
 
     BuildBoxTarget.list(target_prefix=str(tmp_path))
 
     assert capsys.readouterr().out.splitlines() == [
         "alive", "dead (defunct)", "tools"
+    ]
+
+
+def test_list_marks_targets_that_are_not_ready_as_incomplete(
+        tmp_path, capsys):
+    # A create that is still running may have installed a shell already.
+    (tmp_path / "building" / "usr" / "bin").mkdir(parents=True)
+    (tmp_path / "building" / "usr" / "bin" / "sh").touch()
+    (tmp_path / "empty").mkdir()
+
+    BuildBoxTarget.list(target_prefix=str(tmp_path))
+
+    assert capsys.readouterr().out.splitlines() == [
+        "building (incomplete)", "empty (incomplete)"
     ]
 
 
