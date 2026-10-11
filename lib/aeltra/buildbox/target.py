@@ -30,6 +30,7 @@ import re
 import subprocess
 import shutil
 import signal
+import stat
 import sys
 import time
 
@@ -42,6 +43,9 @@ class BuildBoxTarget:
 
     LOCK_WAIT_SECS  = 5
     LOCK_POLL_MSECS = 200
+
+    READY_MARKER = os.path.join("etc", "build-box", "target-ready")
+    CREATING_ENV = "AELTRA_BBOX_CREATING"
 
     @classmethod
     def init(cls):
@@ -97,6 +101,9 @@ class BuildBoxTarget:
                 .format(target_dir, e)
             )
 
+        old_creating = os.environ.get(cls.CREATING_ENV)
+        os.environ[cls.CREATING_ENV] = os.path.realpath(target_dir)
+
         try:
             image_gen = BuildBoxGenerator(**kwargs)
             image_gen.prepare(target_dir, target_name)
@@ -110,17 +117,24 @@ class BuildBoxTarget:
             image_gen.finalize_aept_config(
                 target_dir, repositories=kwargs.get("repositories")
             )
+
+            cls._mark_ready(target_dir)
         except (KeyboardInterrupt, Exception):
             old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
             try:
-                cls._delete(target_name, **kwargs)
+                cls._delete(target_name, **dict(kwargs, force=True))
             except Exception:
                 pass
             finally:
                 signal.signal(signal.SIGINT, old_sig_handler)
 
             raise
+        finally:
+            if old_creating is None:
+                os.environ.pop(cls.CREATING_ENV, None)
+            else:
+                os.environ[cls.CREATING_ENV] = old_creating
         #end try
     #end function
 
@@ -237,6 +251,14 @@ class BuildBoxTarget:
         if not os.path.isdir(target_dir):
             raise BuildBoxError("target '{}' not found.".format(target_name))
 
+        if not kwargs.get("force") and not cls._is_ready(target_dir):
+            raise BuildBoxError(
+                "target '{}' is not ready, it is still being created or its "
+                "creation failed. Use --force to delete it anyway."
+                .format(target_name)
+            )
+        #end if
+
         sysroot = Sysroot(target_dir)
         sysroot.terminate_processes()
         sysroot.umount_all()
@@ -295,6 +317,25 @@ class BuildBoxTarget:
         finally:
             os.close(lock_fd)
         #end try
+    #end function
+
+    @classmethod
+    def _mark_ready(cls, target_dir):
+        """Write the marker without which build-box-do refuses to log into
+        the target, see bbox_target_check_ready() in c-src/util.c."""
+        marker = os.path.join(target_dir, cls.READY_MARKER)
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w", encoding="utf-8"):
+            pass
+    #end function
+
+    @classmethod
+    def _is_ready(cls, target_dir):
+        try:
+            st = os.lstat(os.path.join(target_dir, cls.READY_MARKER))
+        except OSError:
+            return False
+        return stat.S_ISREG(st.st_mode)
     #end function
 
     @classmethod

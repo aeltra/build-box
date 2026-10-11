@@ -32,10 +32,12 @@ require_setgroups
 
 work=$(mktemp -d) || fail "mktemp failed"
 t=/var/lib/build-box/users/$(id -u)/targets/t
+u=/var/lib/build-box/users/$(id -u)/targets/u
 
 cleanup() {
     cd / || :
-    for _m in "$t/home/root/RealHome" "$t/sys" "$t/proc" "$t/dev"; do
+    for _m in "$t/home/root/RealHome" "$t/sys" "$t/proc" "$t/dev" \
+            "$u/home/root/RealHome" "$u/sys" "$u/proc" "$u/dev"; do
         umount "$_m" 2>/dev/null || :
     done
     umount /root 2>/dev/null || :
@@ -73,9 +75,10 @@ note "init refuses an unknown option"
 
 # ── a target ─────────────────────────────────────────────────────────
 
-mkdir -p "$t/dev" "$t/proc" "$t/sys" "$t/etc"
+mkdir -p "$t/dev" "$t/proc" "$t/sys" "$t/etc/build-box"
 provision_shell "$t" || skip "cannot provision a shell into the target"
 echo hello > "$t/marker"
+: > "$t/etc/build-box/target-ready"
 
 # ── mount and umount ─────────────────────────────────────────────────
 
@@ -179,5 +182,40 @@ note "login starts a shell inside the target, in the home, and passes its status
 echo 'exit 0' | "$CMDDRV" login t || fail "login with mounts failed"
 mounted "$t/home/root/RealHome" || fail "login did not mount the home"
 note "login mounts the target first"
+
+# ── a target that is not ready ───────────────────────────────────────
+
+# What a create leaves while it runs, or when it failed: everything but
+# the marker it writes as its very last step.
+mkdir -p "$u/dev" "$u/proc" "$u/sys" "$u/etc"
+provision_shell "$u" || skip "cannot provision a shell into the second target"
+
+for args in "login u" "run u true"; do
+    set -- $args
+    out=$(echo 'exit 0' | "$CMDDRV" "$@" 2>&1)
+    rc=$?
+    [ "$rc" -eq 254 ] || fail "'$args' on a target that is not ready exited $rc, not 254"
+    case "$out" in
+        *"not ready"*) ;;
+        *) fail "'$args' did not say why it refused: '$out'" ;;
+    esac
+done
+for _m in dev proc sys; do
+    mounted "$u/$_m" && fail "$_m was mounted on a target that is not ready"
+done
+[ -e "$u/home" ] && fail "the home was set up on a target that is not ready"
+[ -e "$u/etc/passwd" ] && fail "passwd was copied into a target that is not ready"
+note "login and run refuse a target that is not ready, before mounting or copying anything"
+
+out=$(AELTRA_BBOX_CREATING="$u" "$CMDDRV" run --no-mount --no-file-copy u sh -c 'echo ok') \
+    || fail "run refused the target the create names: $out"
+[ "$out" = ok ] || fail "run on the target the create names did not run: '$out'"
+note "run goes into the target that the running create names"
+
+AELTRA_BBOX_CREATING="$t" "$CMDDRV" run --no-mount --no-file-copy u true 2>/dev/null
+[ $? -eq 254 ] || fail "run went into a target the create does not name"
+echo 'exit 0' | AELTRA_BBOX_CREATING="$u" "$CMDDRV" login --no-mount --no-file-copy u 2>/dev/null
+[ $? -eq 254 ] || fail "login went into a target that is not ready because a create names it"
+note "only run, and only for the target named, goes in"
 
 exit 0

@@ -1208,3 +1208,63 @@ int validate_target_name(const char *module, const char *target_name)
 
     return 0;
 }
+
+/*
+ * "build-box create" writes etc/build-box/target-ready into a target as its
+ * very last step. A target without it is still being created, or its
+ * creation failed, and must not be worked in: a login would copy the host
+ * databases over the ones the create is installing, and the create kills
+ * the session when it is done. The create's own steps have to run inside
+ * the target, though. While it runs, it names the target in
+ * BBOX_CREATING_ENV, and with allow_creating set, that target is let in.
+ *
+ * This guards against accidents, not against the user, whose target it
+ * is. Returns 0 if the target may be entered, -1 if not.
+ */
+int bbox_target_check_ready(const char *module, const char *sys_root,
+        const char *target_name, int allow_creating)
+{
+    static const char *dirs[] = {"etc", "build-box"};
+    const char *creating = NULL;
+    struct stat st, creating_st;
+    int fd = -1;
+    int next_fd = -1;
+    int rval = -1;
+
+    if(allow_creating && (creating = getenv(BBOX_CREATING_ENV)) != NULL) {
+        if(stat(creating, &creating_st) == 0 && stat(sys_root, &st) == 0 &&
+                st.st_dev == creating_st.st_dev &&
+                st.st_ino == creating_st.st_ino)
+            return 0;
+    }
+
+    if((fd = open(sys_root, O_PATH | O_DIRECTORY)) == -1)
+        goto cleanup_and_exit;
+
+    for(size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        next_fd = openat(fd, dirs[i], O_PATH | O_DIRECTORY | O_NOFOLLOW);
+        close(fd);
+
+        if((fd = next_fd) == -1)
+            goto cleanup_and_exit;
+    }
+
+    if(fstatat(fd, "target-ready", &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+            S_ISREG(st.st_mode))
+        rval = 0;
+
+cleanup_and_exit:
+
+    if(fd != -1)
+        close(fd);
+
+    if(rval == -1) {
+        bbox_perror(
+            module,
+            "target '%s' is not ready, it is still being created or its "
+            "creation failed.\n", target_name
+        );
+    }
+
+    return rval;
+}

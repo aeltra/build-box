@@ -205,7 +205,14 @@ def test_info_wants_exactly_one_target(target):
 
 def test_delete_takes_several_targets(target, tmp_path):
     BuildBoxCLI().execute_command("delete", "-t", str(tmp_path), "a", "b")
-    assert target == [("delete", (("a", "b"),), {"target_prefix": str(tmp_path)})]
+    assert target == [("delete", (("a", "b"),),
+                       {"target_prefix": str(tmp_path), "force": False})]
+
+
+def test_delete_force(target, tmp_path):
+    BuildBoxCLI().execute_command("delete", "--force", "-t", str(tmp_path), "a")
+    assert target == [("delete", (("a",),),
+                       {"target_prefix": str(tmp_path), "force": True})]
 
 
 def test_delete_wants_at_least_one_target(target):

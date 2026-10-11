@@ -184,6 +184,9 @@ int bbox_login(int argc, char * const argv[])
         goto cleanup_and_exit;
     }
 
+    if(bbox_target_check_ready("login", buf, target, 0) == -1)
+        goto cleanup_and_exit;
+
     rval = BBOX_ERR_RUNTIME;
 
     /*

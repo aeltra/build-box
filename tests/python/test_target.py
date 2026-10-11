@@ -89,6 +89,13 @@ def hold_lock(path):
     return fd
 
 
+def mark_ready(target_dir):
+    """Leave the marker a create leaves behind once it is done."""
+    marker = target_dir / "etc" / "build-box" / "target-ready"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+
+
 # ── target names ─────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("name", ["s390x", "a.b-c_D9", "...", "-x"])
@@ -173,6 +180,7 @@ def test_delete_refuses_when_something_is_mounted_below(
         tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
     target_dir = tmp_path / "t"
     target_dir.mkdir()
+    mark_ready(target_dir)
     monkeypatch.setattr(
         BuildBoxTarget, "_mount_below",
         classmethod(lambda cls, d, mounts="/proc/mounts": d + "/dev/pts")
@@ -188,6 +196,7 @@ def test_delete_refuses_when_something_is_mounted_below(
 def test_delete_refuses_a_populated_special_directory(
         tmp_path, quiet_sysroot, rmtree_recorder):
     (tmp_path / "t" / "proc" / "1").mkdir(parents=True)
+    mark_ready(tmp_path / "t")
 
     with pytest.raises(BuildBoxError, match="'proc' subdirectory is not empty"):
         BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
@@ -199,6 +208,7 @@ def test_delete_removes_a_clean_target(
         tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
     for d in ["dev", "proc", "sys", "usr/bin"]:
         (tmp_path / "t" / d).mkdir(parents=True)
+    mark_ready(tmp_path / "t")
     monkeypatch.setattr(
         BuildBoxTarget, "_mount_below",
         classmethod(lambda cls, d, mounts="/proc/mounts": None)
@@ -234,6 +244,7 @@ def test_delete_refuses_a_populated_real_home_of_any_user(
     # one left behind by a renamed account counts all the same.
     (tmp_path / "t" / "home" / "old" / "RealHome" / "f").mkdir(parents=True)
     (tmp_path / "t" / "home" / "new" / "RealHome").mkdir(parents=True)
+    mark_ready(tmp_path / "t")
 
     with pytest.raises(BuildBoxError,
             match="'home/old/RealHome' subdirectory is not empty"):
@@ -248,6 +259,7 @@ def test_delete_looks_for_mounts_below_the_resolved_prefix(
     # given the path through a symlink -- /var/lib/build-box moved to /srv,
     # say -- would never see one.
     (tmp_path / "real" / "t").mkdir(parents=True)
+    mark_ready(tmp_path / "real" / "t")
     (tmp_path / "link").symlink_to(tmp_path / "real")
     looked_below = []
     monkeypatch.setattr(
@@ -268,9 +280,10 @@ def test_delete_refuses_a_target_that_is_a_symlink(
     # Only the prefix is resolved. A target that points elsewhere must not
     # take the delete with it.
     (tmp_path / "elsewhere").mkdir()
+    mark_ready(tmp_path / "elsewhere")
     (tmp_path / "t").symlink_to(tmp_path / "elsewhere")
 
-    with pytest.raises(BuildBoxError):
+    with pytest.raises(BuildBoxError, match="could not open"):
         BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
 
     assert rmtree_recorder == []
@@ -280,6 +293,7 @@ def test_delete_refuses_a_target_that_is_a_symlink(
 def test_delete_gives_up_on_a_lock_held_by_someone_else(
         tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
     (tmp_path / "t").mkdir()
+    mark_ready(tmp_path / "t")
     fd = hold_lock(tmp_path / "t")
     naps = []
     monkeypatch.setattr(time, "sleep", naps.append)
@@ -299,6 +313,7 @@ def test_delete_leaves_alone_a_target_that_was_replaced_while_it_waited(
         tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
     target_dir = tmp_path / "t"
     target_dir.mkdir()
+    mark_ready(target_dir)
     fd = hold_lock(target_dir)
 
     def replace_target(seconds):
@@ -307,7 +322,10 @@ def test_delete_leaves_alone_a_target_that_was_replaced_while_it_waited(
         # The lock the delete then gets is the old target's.
         nonlocal fd
         if fd != -1:
-            target_dir.rmdir()
+            marker = target_dir / "etc" / "build-box" / "target-ready"
+            marker.unlink()
+            for d in [marker.parent, marker.parent.parent, target_dir]:
+                d.rmdir()
             (target_dir / "new").mkdir(parents=True)
             os.close(fd)
             fd = -1
@@ -331,6 +349,7 @@ def test_delete_holds_the_lock_a_concurrent_mount_needs(
     for d in ["dev", "proc", "sys", "usr/bin"]:
         (target_dir / d).mkdir(parents=True)
     real_home_mp.mkdir(parents=True)
+    mark_ready(target_dir)
     real_home = tmp_path / "home"
     real_home.mkdir()
     (real_home / "canary").write_text("precious\n")
@@ -367,6 +386,44 @@ def test_delete_holds_the_lock_a_concurrent_mount_needs(
         assert (real_home / "canary").read_text() == "precious\n"
 
     assert not target_dir.exists()
+
+
+def test_delete_refuses_a_target_that_is_not_ready(
+        tmp_path, quiet_sysroot, rmtree_recorder):
+    # A create that is still running: its processes must not be killed,
+    # nor its mounts taken away.
+    (tmp_path / "t" / "usr").mkdir(parents=True)
+
+    with pytest.raises(BuildBoxError, match="is not ready.*--force"):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert rmtree_recorder == []
+    assert quiet_sysroot.calls == []
+
+
+def test_delete_with_force_removes_a_target_that_is_not_ready(
+        tmp_path, quiet_sysroot, rmtree_recorder, monkeypatch):
+    for d in ["dev", "proc", "sys", "usr/bin"]:
+        (tmp_path / "t" / d).mkdir(parents=True)
+    monkeypatch.setattr(
+        BuildBoxTarget, "_mount_below",
+        classmethod(lambda cls, d, mounts="/proc/mounts": None)
+    )
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path), force=True)
+
+    assert rmtree_recorder == [str(tmp_path / "t")]
+    assert quiet_sysroot.calls == ["terminate", "umount"]
+
+
+def test_delete_with_force_still_refuses_a_populated_special_directory(
+        tmp_path, quiet_sysroot, rmtree_recorder):
+    (tmp_path / "t" / "proc" / "1").mkdir(parents=True)
+
+    with pytest.raises(BuildBoxError, match="'proc' subdirectory is not empty"):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path), force=True)
+
+    assert rmtree_recorder == []
 
 
 # ── list and info ────────────────────────────────────────────────────
@@ -481,7 +538,7 @@ def create_stubs(monkeypatch, quiet_sysroot):
     deleted = []
 
     def delete(cls, name, **kw):
-        deleted.append(name)
+        deleted.append((name, kw.get("force", False)))
         target_module.shutil.rmtree(
             os.path.join(kw.get("target_prefix"), name), ignore_errors=True
         )
@@ -537,16 +594,21 @@ def test_create_with_force_deletes_the_old_target_first(tmp_path, create_stubs):
         "t", "one.spec", target_prefix=str(tmp_path), force=True
     )
 
-    assert create_stubs == ["t"]
+    assert create_stubs == [("t", True)]
     assert RecordingGenerator.calls[0] == ("prepare", str(tmp_path / "t"), "t")
     assert not os.path.exists(tmp_path / "t" / "usr")
 
 
-def test_create_cleans_up_and_reraises_when_a_step_fails(tmp_path, create_stubs):
+def test_create_cleans_up_and_reraises_when_a_step_fails(
+        tmp_path, create_stubs, monkeypatch):
+    monkeypatch.delenv("AELTRA_BBOX_CREATING", raising=False)
+
     with pytest.raises(RuntimeError, match="customize failed"):
         BuildBoxTarget.create("t", "boom", target_prefix=str(tmp_path))
 
-    assert create_stubs == ["t"]
+    # The target never got ready, so the cleanup has to force the delete.
+    assert create_stubs == [("t", True)]
+    assert "AELTRA_BBOX_CREATING" not in os.environ
 
 
 def test_create_rejects_a_bad_name_before_doing_anything(tmp_path, create_stubs):
@@ -555,3 +617,32 @@ def test_create_rejects_a_bad_name_before_doing_anything(tmp_path, create_stubs)
 
     assert not os.path.exists(tmp_path / ".." / "t")
     assert RecordingGenerator.calls == []
+
+
+class ObservingGenerator(RecordingGenerator):
+    seen = []
+
+    def customize(self, target_dir, specfile):
+        marker = os.path.join(target_dir, "etc", "build-box", "target-ready")
+        self.seen.append(
+            (os.path.exists(marker), os.environ.get("AELTRA_BBOX_CREATING"))
+        )
+        super().customize(target_dir, specfile)
+
+
+def test_create_marks_the_target_ready_only_at_the_end(
+        tmp_path, create_stubs, monkeypatch):
+    ObservingGenerator.seen = []
+    monkeypatch.setattr(target_module, "BuildBoxGenerator", ObservingGenerator)
+    monkeypatch.delenv("AELTRA_BBOX_CREATING", raising=False)
+    prefix = tmp_path / "targets"
+
+    BuildBoxTarget.create("t", "one.spec", target_prefix=str(prefix))
+
+    # While the specs run, build-box-do lets "run" into the target only
+    # because the variable names it.
+    target_dir = prefix / "t"
+    assert ObservingGenerator.seen \
+        == [(False, os.path.realpath(str(target_dir)))]
+    assert (target_dir / "etc" / "build-box" / "target-ready").is_file()
+    assert "AELTRA_BBOX_CREATING" not in os.environ

@@ -310,17 +310,22 @@ class BuildBoxCLI:
                 OPTIONS:
 
                   -h, --help      Print this help message and exit immediately.
+
+                  --force         Also delete a target that is not ready, e.g.
+                                  because its creation failed.
                 """  # noqa
             ))
 
         kwargs = {
             "target_prefix":
-                Paths.target_prefix()
+                Paths.target_prefix(),
+            "force":
+                False
         }
 
         try:
             opts, args = getopt.getopt(
-                args, "ht:", ["help", "targets="]
+                args, "ht:", ["force", "help", "targets="]
             )
         except getopt.GetoptError:
             usage()
@@ -336,6 +341,9 @@ class BuildBoxCLI:
                     kwargs["target_prefix"] = os.path.normpath(
                         os.path.realpath(v.strip())
                     )
+                    break
+                if case("--force"):
+                    kwargs["force"] = True
                     break
             #end for
         #end for

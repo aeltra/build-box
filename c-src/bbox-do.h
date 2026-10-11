@@ -18,6 +18,7 @@
 #define BBOX_GROUP_NAME "build-box"
 #define BBOX_VAR_LIB "/var/lib/build-box"
 #define BBOX_USER_DIR_TEMPLATE BBOX_VAR_LIB"/users/%lu"
+#define BBOX_CREATING_ENV "AELTRA_BBOX_CREATING"
 
 #include <sys/types.h>
 
@@ -120,6 +121,8 @@ int bbox_try_fix_pkg_cache_symlink(const char *module,
 
 char *bbox_get_user_dir(uid_t uid, size_t *n_ptr);
 int validate_target_name(const char *module, const char *target_name);
+int bbox_target_check_ready(const char *module, const char *sys_root,
+        const char *target_name, int allow_creating);
 
 /* Mounting */
 

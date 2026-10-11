@@ -493,6 +493,9 @@ int bbox_run(int argc, char * const argv[])
         goto cleanup_and_exit;
     }
 
+    if(bbox_target_check_ready("run", buf, target, 1) == -1)
+        goto cleanup_and_exit;
+
     rval = BBOX_ERR_RUNTIME;
 
     /*

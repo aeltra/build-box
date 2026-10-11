@@ -248,7 +248,10 @@ _build_box_opt_complete() {
         create)
             _opts="$_opts -r --release -a --arch -l --libc --force --repo --no-verify"
             ;;
-        delete|list)
+        delete)
+            _opts="$_opts --force"
+            ;;
+        list)
             _opts="$_opts"
             ;;
         info)

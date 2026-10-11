@@ -68,6 +68,10 @@ def test_create_offers_repo_and_not_repo_base(complete):
     assert "--repo-base" not in options
 
 
+def test_delete_offers_force(complete):
+    assert "--force" in complete("delete", "--")
+
+
 def test_release_names_are_completed(complete):
     assert complete("create", "-r", "") == ["nemo", "ollie"]
 
