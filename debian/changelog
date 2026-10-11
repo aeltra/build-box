@@ -1,3 +1,19 @@
+build-box-utils (0.19.2-1) unstable; urgency=medium
+
+  * "build-box run" and "login" close the directory file descriptors
+    they inherited before they enter the target. One opened outside the
+    target survived the chroot and led back to the host's tree from
+    inside the session. Other descriptors are passed on as before.
+  * "build-box delete" removes directories that their owner cannot list
+    or empty, which a build may leave behind by accident (Go's module
+    cache is read-only) or on purpose. Only when it cannot look into or
+    remove a directory does it give the directories back their owner
+    permissions, without following symlinks. It now looks for mounts
+    below the target first, and a locked directory no longer crashes it
+    or lets it skip the check that the RealHome mount points are empty.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Mon, 12 Oct 2026 00:28:21 +0300
+
 build-box-utils (0.19.1-1) unstable; urgency=medium
 
   * "build-box mount" refuses a target that is not ready, like "login"
