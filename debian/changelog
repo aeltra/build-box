@@ -1,3 +1,25 @@
+build-box-utils (0.19.0-1) unstable; urgency=medium
+
+  * "build-box create" marks a target as ready with
+    /etc/build-box/target-ready as its very last step. "login" and "run"
+    refuse a target that is not ready, before they mount or copy
+    anything into it, so that nobody works in a target that is still
+    being created or whose creation failed. Only the create's own steps
+    may "run" inside the target it is creating.
+  * "build-box delete" refuses a target that is not ready, so that it
+    does not kill a create that is still running. "delete --force"
+    removes such a target all the same, still only after the checks
+    for mounts below it.
+  * Bash completion offers --force for "delete".
+  * "build-box create" refuses anything already at the target's name,
+    an empty directory or a file included, as an existing target. An
+    empty directory got past the check and failed with a confusing
+    error, a file crashed it. --force replaces an empty directory.
+  * "build-box run" reports a target that does not exist under its own
+    name, not as "login".
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sun, 11 Oct 2026 13:28:35 +0300
+
 build-box-utils (0.18.3-1) unstable; urgency=medium
 
   * Fixed: "build-box delete" looked for mounts below a target without
