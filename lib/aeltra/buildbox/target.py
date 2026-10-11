@@ -254,6 +254,8 @@ class BuildBoxTarget:
         if not os.path.isdir(target_dir):
             raise BuildBoxError("target '{}' not found.".format(target_name))
 
+        cls._unlock_dir(target_dir)
+
         if not kwargs.get("force") and not cls._is_ready(target_dir):
             raise BuildBoxError(
                 "target '{}' is not ready, it is still being created or its "
@@ -283,27 +285,6 @@ class BuildBoxTarget:
                 )
             #end if
 
-            subdirs = ["dev", "proc", "sys"]
-
-            home_dir = os.path.join(target_dir, "home")
-            if os.path.isdir(home_dir):
-                subdirs += [
-                    os.path.join("home", user, "RealHome")
-                    for user in sorted(os.listdir(home_dir))
-                ]
-            #end if
-
-            for subdir in subdirs:
-                full_path = os.path.join(target_dir, subdir)
-
-                if os.path.isdir(full_path) and os.listdir(full_path):
-                    raise BuildBoxError(
-                        "the '{}' subdirectory is not empty, aborting."
-                        .format(subdir)
-                    )
-                #end if
-            #end for
-
             mountpoint = cls._mount_below(target_dir)
             if mountpoint:
                 raise BuildBoxError(
@@ -312,14 +293,87 @@ class BuildBoxTarget:
                 )
             #end if
 
+            try:
+                cls._refuse_populated_mountpoints(target_dir)
+            except PermissionError:
+                cls._unlock_tree(target_dir)
+                cls._refuse_populated_mountpoints(target_dir)
+            #end try
+
             old_sig_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
             try:
-                shutil.rmtree(target_dir)
+                try:
+                    shutil.rmtree(target_dir)
+                except PermissionError:
+                    cls._unlock_tree(target_dir)
+                    shutil.rmtree(target_dir)
+                #end try
             finally:
                 signal.signal(signal.SIGINT, old_sig_handler)
         finally:
             os.close(lock_fd)
         #end try
+    #end function
+
+    @classmethod
+    def _refuse_populated_mountpoints(cls, target_dir):
+        """Raise a BuildBoxError if one of the directories build-box-do
+        mounts on is not empty. Raises PermissionError if one of them
+        cannot be looked into."""
+        subdirs = ["dev", "proc", "sys"] + [
+            os.path.join("home", user, "RealHome")
+            for user in sorted(
+                cls._list_dir(os.path.join(target_dir, "home"))
+            )
+        ]
+
+        for subdir in subdirs:
+            if cls._list_dir(os.path.join(target_dir, subdir)):
+                raise BuildBoxError(
+                    "the '{}' subdirectory is not empty, aborting."
+                    .format(subdir)
+                )
+            #end if
+        #end for
+    #end function
+
+    @classmethod
+    def _list_dir(cls, path):
+        try:
+            return os.listdir(path)
+        except (FileNotFoundError, NotADirectoryError):
+            return []
+    #end function
+
+    @classmethod
+    def _unlock_tree(cls, target_dir):
+        """Unlock target_dir and every directory below it, see
+        _unlock_dir(). Goes through descriptors and never follows a
+        symlink, so it does not leave the tree."""
+        cls._unlock_dir(target_dir)
+        for _, dirnames, _, dirfd in os.fwalk(target_dir):
+            for name in dirnames:
+                cls._unlock_dir(name, dir_fd=dirfd)
+            #end for
+        #end for
+    #end function
+
+    @classmethod
+    def _unlock_dir(cls, path, dir_fd=None):
+        """Give a directory of the caller's the owner permissions rwx if
+        it lacks any of them, so that it can be listed and emptied.
+        Anything else, a symlink in particular, is left alone."""
+        st = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+            return
+        if st.st_mode & stat.S_IRWXU == stat.S_IRWXU:
+            return
+
+        os.chmod(
+            path, stat.S_IMODE(st.st_mode) | stat.S_IRWXU,
+            dir_fd=dir_fd, follow_symlinks=False
+        )
     #end function
 
     @classmethod

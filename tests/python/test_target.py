@@ -426,6 +426,143 @@ def test_delete_with_force_still_refuses_a_populated_special_directory(
     assert rmtree_recorder == []
 
 
+# A build in a session owns every file in its target and may leave
+# directories behind that their owner cannot list or empty, by accident
+# (Go's module cache is read-only) or on purpose. delete has to remove
+# them all the same. Run as root, as in a package build, these pass
+# without exercising anything: root ignores the permissions.
+
+@pytest.fixture
+def no_mounts(monkeypatch):
+    monkeypatch.setattr(
+        BuildBoxTarget, "_mount_below",
+        classmethod(lambda cls, d, mounts="/proc/mounts": None)
+    )
+
+
+def clean_target(target_dir):
+    for d in ["dev", "proc", "sys", "home/u/RealHome"]:
+        (target_dir / d).mkdir(parents=True)
+    mark_ready(target_dir)
+
+
+def test_delete_removes_directories_without_permissions(
+        tmp_path, quiet_sysroot, no_mounts):
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+
+    # Nested, so the inner one cannot be seen until the outer one is open.
+    locked = target_dir / "usr" / "a" / "b"
+    locked.mkdir(parents=True)
+    (locked / "f").write_text("x")
+    locked.chmod(0o000)
+    locked.parent.chmod(0o000)
+
+    # Readable, but nothing in it can be removed.
+    read_only = target_dir / "home" / "u" / "go" / "pkg" / "mod"
+    (read_only / "sub").mkdir(parents=True)
+    (read_only / "f").write_text("x")
+    (read_only / "sub" / "f").write_text("x")
+    (read_only / "sub").chmod(0o555)
+    read_only.chmod(0o555)
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert not target_dir.exists()
+
+
+def test_delete_removes_a_target_whose_root_is_locked(
+        tmp_path, quiet_sysroot, no_mounts):
+    # "chmod 000 /" in a session.
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+    target_dir.chmod(0o000)
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert not (tmp_path / "t").exists()
+
+
+def test_delete_removes_a_target_whose_home_is_locked(
+        tmp_path, quiet_sysroot, no_mounts):
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+    (target_dir / "home").chmod(0o000)
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert not target_dir.exists()
+
+
+def test_delete_still_refuses_a_populated_real_home_behind_a_locked_dir(
+        tmp_path, quiet_sysroot, no_mounts):
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+    (target_dir / "home" / "u" / "RealHome" / "canary").write_text("x")
+    (target_dir / "home" / "u").chmod(0o000)
+
+    with pytest.raises(BuildBoxError, match="RealHome' subdirectory is not empty"):
+        BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    (target_dir / "home" / "u").chmod(0o755)
+    assert (target_dir / "home" / "u" / "RealHome" / "canary").exists()
+
+
+def test_delete_never_unlocks_a_real_home_that_is_still_mounted(
+        tmp_path, quiet_sysroot, request):
+    # The mount check reads the mount table, which needs no permission
+    # on the home, and comes before anything that unlocks directories.
+    if not enter_userns(request):
+        return
+
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+    real_home = tmp_path / "home"
+    (real_home / "private").mkdir(parents=True)
+    (real_home / "private").chmod(0o000)
+    real_home_mp = target_dir / "home" / "u" / "RealHome"
+    subprocess.run(
+        ["mount", "--bind", str(real_home), str(real_home_mp)], check=True
+    )
+    real_home.chmod(0o000)
+
+    try:
+        with pytest.raises(BuildBoxError, match="something mounted"):
+            BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+        assert real_home.stat().st_mode & 0o777 == 0o000
+    finally:
+        real_home.chmod(0o700)
+        subprocess.run(["umount", str(real_home_mp)], check=True)
+
+    assert (real_home / "private").stat().st_mode & 0o777 == 0o000
+    (real_home / "private").chmod(0o700)
+
+
+def test_delete_leaves_a_locked_directory_outside_the_target_alone(
+        tmp_path, quiet_sysroot, no_mounts):
+    outside = tmp_path / "outside"
+    (outside / "inner").mkdir(parents=True)
+    (outside / "inner" / "f").write_text("precious\n")
+    (outside / "inner").chmod(0o000)
+    outside.chmod(0o500)
+
+    target_dir = tmp_path / "t"
+    clean_target(target_dir)
+    (target_dir / "link").symlink_to(outside)
+    (target_dir / "locked").mkdir()
+    (target_dir / "locked").chmod(0o000)
+
+    BuildBoxTarget._delete("t", target_prefix=str(tmp_path))
+
+    assert not target_dir.exists()
+    assert outside.stat().st_mode & 0o777 == 0o500
+    assert (outside / "inner").stat().st_mode & 0o777 == 0o000
+    outside.chmod(0o700)
+    (outside / "inner").chmod(0o700)
+    assert (outside / "inner" / "f").read_text() == "precious\n"
+
+
 # ── list and info ────────────────────────────────────────────────────
 
 def test_list_marks_targets_without_a_shell_as_defunct(tmp_path, capsys):
