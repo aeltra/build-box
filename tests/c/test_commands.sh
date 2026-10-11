@@ -197,7 +197,7 @@ note "login mounts the target first"
 mkdir -p "$u/dev" "$u/proc" "$u/sys" "$u/etc"
 provision_shell "$u" || skip "cannot provision a shell into the second target"
 
-for args in "login u" "run u true"; do
+for args in "login u" "run u true" "mount u"; do
     set -- $args
     out=$(echo 'exit 0' | "$CMDDRV" "$@" 2>&1)
     rc=$?
@@ -212,17 +212,23 @@ for _m in dev proc sys; do
 done
 [ -e "$u/home" ] && fail "the home was set up on a target that is not ready"
 [ -e "$u/etc/passwd" ] && fail "passwd was copied into a target that is not ready"
-note "login and run refuse a target that is not ready, before mounting or copying anything"
+note "login, run and mount refuse a target that is not ready, before mounting or copying anything"
 
 out=$(AELTRA_BBOX_CREATING="$u" "$CMDDRV" run --no-mount --no-file-copy u sh -c 'echo ok') \
     || fail "run refused the target the create names: $out"
 [ "$out" = ok ] || fail "run on the target the create names did not run: '$out'"
 note "run goes into the target that the running create names"
 
+AELTRA_BBOX_CREATING="$u" "$CMDDRV" mount -m proc u || fail "mount refused the target the create names"
+mounted "$u/proc" || fail "proc is not mounted on the target the create names"
+"$CMDDRV" umount u || fail "umount refused a target that is not ready"
+mounted "$u/proc" && fail "proc is still mounted after umount"
+note "mount goes into the target that the running create names, umount into any"
+
 AELTRA_BBOX_CREATING="$t" "$CMDDRV" run --no-mount --no-file-copy u true 2>/dev/null
 [ $? -eq 254 ] || fail "run went into a target the create does not name"
 echo 'exit 0' | AELTRA_BBOX_CREATING="$u" "$CMDDRV" login --no-mount --no-file-copy u 2>/dev/null
 [ $? -eq 254 ] || fail "login went into a target that is not ready because a create names it"
-note "only run, and only for the target named, goes in"
+note "only run and mount, and only for the target named, go in"
 
 exit 0

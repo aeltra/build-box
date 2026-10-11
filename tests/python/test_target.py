@@ -679,3 +679,23 @@ def test_create_marks_the_target_ready_only_at_the_end(
         == [(False, os.path.realpath(str(target_dir)))]
     assert (target_dir / "etc" / "build-box" / "target-ready").is_file()
     assert "AELTRA_BBOX_CREATING" not in os.environ
+
+
+def test_create_names_the_target_before_it_mounts(
+        tmp_path, create_stubs, monkeypatch):
+    # The create's "build-box mount" inherits the variable; without it,
+    # build-box-do refuses to mount below a target that is not ready.
+    seen = []
+
+    class RecordingSysroot(QuietSysroot):
+        def __enter__(self):
+            seen.append(os.environ.get("AELTRA_BBOX_CREATING"))
+            return super().__enter__()
+
+    monkeypatch.setattr(target_module, "Sysroot", RecordingSysroot)
+    monkeypatch.delenv("AELTRA_BBOX_CREATING", raising=False)
+    prefix = tmp_path / "targets"
+
+    BuildBoxTarget.create("t", "one.spec", target_prefix=str(prefix))
+
+    assert seen == [os.path.realpath(str(prefix / "t"))]

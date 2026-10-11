@@ -1214,9 +1214,10 @@ int validate_target_name(const char *module, const char *target_name)
  * very last step. A target without it is still being created, or its
  * creation failed, and must not be worked in: a login would copy the host
  * databases over the ones the create is installing, and the create kills
- * the session when it is done. The create's own steps have to run inside
- * the target, though. While it runs, it names the target in
- * BBOX_CREATING_ENV, and with allow_creating set, that target is let in.
+ * the session when it is done. The create itself has to mount below the
+ * target and run its steps inside it, though. While it runs, it names the
+ * target in BBOX_CREATING_ENV, and with allow_creating set, that target is
+ * let in.
  *
  * This guards against accidents, not against the user, whose target it
  * is. Returns 0 if the target may be entered, -1 if not.
