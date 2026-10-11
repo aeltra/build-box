@@ -587,6 +587,39 @@ def test_create_refuses_an_existing_populated_target(tmp_path, create_stubs):
     assert RecordingGenerator.calls == []
 
 
+def test_create_refuses_an_existing_empty_target_directory(
+        tmp_path, create_stubs):
+    # What a create that is still running has at first, or what one that
+    # was interrupted right after creating the directory leaves behind.
+    (tmp_path / "t").mkdir()
+
+    with pytest.raises(BuildBoxError, match="already exists"):
+        BuildBoxTarget.create("t", "one.spec", target_prefix=str(tmp_path))
+
+    assert RecordingGenerator.calls == []
+
+
+def test_create_refuses_a_file_in_the_way(tmp_path, create_stubs):
+    (tmp_path / "t").touch()
+
+    with pytest.raises(BuildBoxError, match="already exists"):
+        BuildBoxTarget.create("t", "one.spec", target_prefix=str(tmp_path))
+
+    assert RecordingGenerator.calls == []
+
+
+def test_create_with_force_replaces_an_empty_target_directory(
+        tmp_path, create_stubs):
+    (tmp_path / "t").mkdir()
+
+    BuildBoxTarget.create(
+        "t", "one.spec", target_prefix=str(tmp_path), force=True
+    )
+
+    assert create_stubs == [("t", True)]
+    assert RecordingGenerator.calls[0] == ("prepare", str(tmp_path / "t"), "t")
+
+
 def test_create_with_force_deletes_the_old_target_first(tmp_path, create_stubs):
     (tmp_path / "t" / "usr").mkdir(parents=True)
 

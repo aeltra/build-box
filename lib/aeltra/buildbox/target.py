@@ -82,7 +82,7 @@ class BuildBoxTarget:
 
         target_dir = os.path.join(target_prefix, target_name)
 
-        if os.path.exists(target_dir) and os.listdir(target_dir):
+        if os.path.lexists(target_dir):
             if kwargs.get("force"):
                 cls.delete([target_name], **kwargs)
             else:

@@ -489,7 +489,7 @@ int bbox_run(int argc, char * const argv[])
     struct stat st;
 
     if(lstat(buf, &st) == -1) {
-        bbox_perror("login", "target '%s' not found.\n", target);
+        bbox_perror("run", "target '%s' not found.\n", target);
         goto cleanup_and_exit;
     }
 

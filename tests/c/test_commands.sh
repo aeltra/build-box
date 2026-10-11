@@ -124,6 +124,13 @@ for args in "mount nope" "mount ../t" "mount" "mount --bogus t" "mount -m ext4 t
 done
 note "a missing target, a bad name, a bad option and a missing command are invocation errors"
 
+out=$("$CMDDRV" run nope -- true 2>&1)
+case "$out" in
+    *"build-box-do run: error: target 'nope' not found"*) ;;
+    *) fail "run did not report the missing target under its own name: '$out'" ;;
+esac
+note "run reports a missing target under its own name"
+
 # ── run ──────────────────────────────────────────────────────────────
 
 # Only the shell is provisioned into the target, so every command below
