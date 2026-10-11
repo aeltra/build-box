@@ -1,3 +1,19 @@
+build-box-utils (0.19.1-1) unstable; urgency=medium
+
+  * "build-box mount" refuses a target that is not ready, like "login"
+    and "run". Only the create itself may mount below the target it is
+    creating; "umount" works on any target.
+  * "build-box list" shows a target that is not ready as incomplete;
+    defunct now means a finished target without a shell.
+  * The proc of a target is mounted with hidepid=invisible: it shows
+    only the user's own processes, whatever the host's /proc shows. On
+    kernels older than 5.8, which do not have that option, it is mounted
+    as before and shows what the host's /proc shows.
+  * A README describes Build Box and its requirements; the help of
+    "login", "run" and "mount" mentions what proc shows.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Sun, 11 Oct 2026 14:16:50 +0300
+
 build-box-utils (0.19.0-1) unstable; urgency=medium
 
   * "build-box create" marks a target as ready with
