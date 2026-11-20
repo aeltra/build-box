@@ -1,3 +1,27 @@
+build-box-utils (0.19.3-1) unstable; urgency=medium
+
+  * A target's dev comes with a tmpfs on /dev/shm and a devpts of its
+    own on /dev/pts. The bind of the host's /dev left both as empty
+    directories that only root could write to: shm_open() and sem_open()
+    failed for an ordinary user and nobody got a pseudo-terminal.
+    Python's multiprocessing did not work, for example, and the install
+    step of Python compiled only a part of its standard library without
+    reporting an error. Sessions see neither the shared memory objects
+    nor the terminals of the host.
+  * The two are mounted and unmounted together with dev, also by -m dev.
+    What is in a target's /dev/shm is gone after "build-box umount". A
+    file that is still open there, or a pseudo-terminal, makes the
+    umount fail until it is closed.
+  * "build-box mount", "login" and "run" refuse a target whose dev has
+    something else than /dev mounted on it; "umount" takes it down. A
+    dev mount that was left shared with the host's /dev is made private
+    before anything is mounted or unmounted below it, so that neither
+    reaches the host's /dev/shm and /dev/pts.
+  * On a host whose /dev has no shm or pts directory, the mount on it is
+    left out with a warning.
+
+ -- Tobias Koch <tobias.koch@gmail.com>  Fri, 20 Nov 2026 20:22:11 +0300
+
 build-box-utils (0.19.2-1) unstable; urgency=medium
 
   * "build-box run" and "login" close the directory file descriptors
