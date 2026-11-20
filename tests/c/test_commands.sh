@@ -36,8 +36,9 @@ u=/var/lib/build-box/users/$(id -u)/targets/u
 
 cleanup() {
     cd / || :
-    for _m in "$t/home/root/RealHome" "$t/sys" "$t/proc" "$t/dev" \
-            "$u/home/root/RealHome" "$u/sys" "$u/proc" "$u/dev"; do
+    for _m in "$t/home/root/RealHome" "$t/sys" "$t/proc" "$t/dev/pts" \
+            "$t/dev/shm" "$t/dev" "$u/home/root/RealHome" "$u/sys" \
+            "$u/proc" "$u/dev/pts" "$u/dev/shm" "$u/dev"; do
         umount "$_m" 2>/dev/null || :
     done
     umount /root 2>/dev/null || :
@@ -56,10 +57,12 @@ mount --bind "$work/home" /root || fail "could not bind the caller's home over /
 # The dev mount is a non-recursive bind of /dev.  In a user namespace
 # the kernel refuses that for a mount whose child mounts are locked,
 # which the host's pts, shm and mqueue below /dev are, so /dev is
-# replaced with a directory of ours first.  It keeps a /dev/null, which
-# is all the sessions below need.
-mkdir "$work/dev"
+# replaced with a directory of ours first.  It keeps a /dev/null, and the
+# directories that the target's own shm and pts are mounted on, with the
+# ptmx link that leads into pts; see test_dev_mounts.sh.
+mkdir "$work/dev" "$work/dev/shm" "$work/dev/pts"
 : > "$work/dev/null"
+ln -s pts/ptmx "$work/dev/ptmx"
 mount --bind /dev/null "$work/dev/null" || fail "could not bind /dev/null"
 mount --bind "$work/dev" /dev || fail "could not put a /dev of our own in place"
 
@@ -83,7 +86,7 @@ echo hello > "$t/marker"
 # ── mount and umount ─────────────────────────────────────────────────
 
 "$CMDDRV" mount t || fail "mount failed"
-for _m in dev proc sys home/root/RealHome; do
+for _m in dev dev/shm dev/pts proc sys home/root/RealHome; do
     mounted "$t/$_m" || fail "$_m is not mounted after mount"
 done
 [ -e "$t/home/root/RealHome/../../../marker" ] || fail "sanity"
@@ -105,7 +108,7 @@ mounted "$t/proc" || fail "umount -m dev took proc down as well"
 note "umount -m takes down only what was named"
 
 "$CMDDRV" umount t || fail "umount failed"
-for _m in dev proc sys home/root/RealHome; do
+for _m in dev/pts dev/shm dev proc sys home/root/RealHome; do
     mounted "$t/$_m" && fail "$_m is still mounted after umount"
 done
 note "umount takes everything down"
@@ -139,6 +142,12 @@ out=$("$CMDDRV" run --no-file-copy t sh -c 'read l < /marker; echo $l') || fail 
 [ "$out" = hello ] || fail "run did not run inside the target: '$out'"
 mounted "$t/proc" || fail "run did not mount the target first"
 note "run mounts the target and runs the command inside it"
+
+out=$("$CMDDRV" run --no-file-copy t sh -c \
+    ': > /dev/shm/x && exec 3<>/dev/ptmx && test -e /dev/pts/0 && echo ok' 2>&1) \
+    || fail "run for shm and pts failed: $out"
+[ "$out" = ok ] || fail "no shared memory or pseudo-terminal inside the target: '$out'"
+note "a session can create a file in /dev/shm and open a pseudo-terminal"
 
 "$CMDDRV" run --no-mount --no-file-copy t sh -c 'exit 7'
 [ $? -eq 7 ] || fail "the command's exit status was not passed through"

@@ -49,6 +49,8 @@ void bbox_login_usage()
         "  -m, --mount <fstype>  Mount 'dev', 'proc', 'sys' or 'home'. If this   \n"
         "                        option is not specified then the default is to  \n"
         "                        mount all of them.                              \n"
+        "                        'dev' comes with a /dev/shm and a /dev/pts of   \n"
+        "                        the target's own.                               \n"
         "                        'proc' shows only your own processes. On        \n"
         "                        kernels older than 5.8, it shows what the       \n"
         "                        host's /proc shows.                             \n"

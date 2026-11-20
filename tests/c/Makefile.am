@@ -146,6 +146,7 @@ mountdrv_CPPFLAGS = $(AM_CPPFLAGS)
 # user namespaces, or a tool.
 dist_check_SCRIPTS = \
     test_commands.sh \
+    test_dev_mounts.sh \
     test_group_check.sh \
     test_inherited_fds.sh \
     test_init_user_dir.sh \

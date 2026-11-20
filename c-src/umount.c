@@ -130,16 +130,73 @@ int bbox_umount_getopt(bbox_conf_t *conf, int argc, char * const argv[])
     return optind;
 }
 
+/*
+ * Unmount what is mounted on <name> directly below the directory that the
+ * descriptor refers to. The caller has verified that directory. Nothing
+ * mounted there, or no such entry, is a success.
+ */
+static int bbox_umount_at(const char *parent, int parent_fd, const char *name)
+{
+    char fd_path[64 + NAME_MAX];
+    struct stat st;
+    int is_mounted = 0;
+    int rval = 0;
+
+    if(fstatat(parent_fd, name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
+        if(errno == ENOENT)
+            return 0;
+        bbox_perror("umount", "could not stat '%s/%s': %s.\n", parent, name,
+                strerror(errno));
+        return -1;
+    }
+
+    if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
+        bbox_perror("umount", "%s/%s is not a directory.\n", parent, name);
+        return -1;
+    }
+
+    if((is_mounted = bbox_is_mount_point_at("umount", parent_fd, name)) == -1)
+        return -1;
+
+    if(!is_mounted)
+        return 0;
+
+    /*
+     * Go through the descriptor of the verified parent. A mount point cannot
+     * be renamed and UMOUNT_NOFOLLOW refuses symlinks, so the single path
+     * component behind it can only ever resolve to a mount directly below
+     * the parent.
+     */
+    if(snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/%s", parent_fd,
+            name) >= (int) sizeof(fd_path))
+    {
+        bbox_perror("umount", "mount point name '%s' is too long.\n", name);
+        return -1;
+    }
+
+    if(bbox_raise_privileges() == -1)
+        return -1;
+
+    if(umount2(fd_path, UMOUNT_NOFOLLOW) != 0) {
+        bbox_perror("umount", "failed to unmount %s/%s: %s\n", parent, name,
+                strerror(errno));
+        rval = -1;
+    }
+
+    if(bbox_lower_privileges() == -1)
+        rval = -1;
+
+    return rval;
+}
+
 int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
         const char *name)
 {
     char *parent = NULL;
     size_t parent_len = 0;
-    char fd_path[64 + NAME_MAX];
     struct stat st;
     int lock_fd = -1;
     int parent_fd = -1;
-    int is_mounted = 0;
     int rval = -1;
 
     if(bbox_validate_entry_name("umount", name) == -1)
@@ -166,55 +223,7 @@ int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
     if((parent_fd = bbox_open_dir_owned_by("umount", parent, getuid())) == -1)
         goto cleanup_and_exit;
 
-    if(fstatat(parent_fd, name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
-        if(errno == ENOENT) {
-            rval = 0;
-            goto cleanup_and_exit;
-        }
-        bbox_perror("umount", "could not stat '%s/%s': %s.\n", parent, name,
-                strerror(errno));
-        goto cleanup_and_exit;
-    }
-
-    if(S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
-        bbox_perror("umount", "%s/%s is not a directory.\n", parent, name);
-        goto cleanup_and_exit;
-    }
-
-    if((is_mounted = bbox_is_mount_point_at("umount", parent_fd, name)) == -1)
-        goto cleanup_and_exit;
-
-    if(!is_mounted) {
-        rval = 0;
-        goto cleanup_and_exit;
-    }
-
-    /*
-     * Go through the descriptor of the verified parent. A mount point cannot
-     * be renamed and UMOUNT_NOFOLLOW refuses symlinks, so the single path
-     * component behind it can only ever resolve to a mount directly below
-     * the parent.
-     */
-    if(snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/%s", parent_fd,
-            name) >= (int) sizeof(fd_path))
-    {
-        bbox_perror("umount", "mount point name '%s' is too long.\n", name);
-        goto cleanup_and_exit;
-    }
-
-    if(bbox_raise_privileges() == -1)
-        goto cleanup_and_exit;
-
-    rval = 0;
-
-    if(umount2(fd_path, UMOUNT_NOFOLLOW) != 0) {
-        bbox_perror("umount", "failed to unmount %s/%s: %s\n", parent, name,
-                strerror(errno));
-        rval = -1;
-    }
-
-    if(bbox_lower_privileges() == -1)
-        rval = -1;
+    rval = bbox_umount_at(parent, parent_fd, name);
 
 cleanup_and_exit:
 
@@ -222,6 +231,86 @@ cleanup_and_exit:
         close(parent_fd);
     close(lock_fd);
     free(parent);
+    return rval;
+}
+
+/*
+ * Unmount what bbox_mount_dev_special() mounted on <name> below the
+ * sysroot's dev. This has to happen before dev itself is unmounted, which
+ * fails as long as there is a mount below it.
+ *
+ * The parent is the host's /dev and not the caller's directory, so it is
+ * opened by bbox_open_mounted_dev(). If dev has no mount of /dev on it,
+ * nothing below it is ours, and what else may be there is left to the
+ * unmount of dev.
+ */
+int bbox_umount_dev_special(const char *sys_root, const char *name)
+{
+    char *dev = NULL;
+    size_t dev_len = 0;
+    char dev_path[64];
+    struct stat st;
+    int lock_fd = -1;
+    int dev_fd = -1;
+    int is_private = 0;
+    int rval = -1;
+
+    if(bbox_validate_entry_name("umount", name) == -1)
+        return -1;
+
+    /* Serialize with other invocations on this sysroot, see bbox_lock_dir. */
+    if((lock_fd = bbox_lock_dir("umount", sys_root)) == -1)
+        return -1;
+
+    bbox_path_join(&dev, sys_root, "dev", &dev_len);
+
+    switch(bbox_open_mounted_dev("umount", sys_root, &dev_fd)) {
+        case 1:
+            rval = 0;
+            goto cleanup_and_exit;
+        case -1:
+            goto cleanup_and_exit;
+        default:
+            break;
+    }
+
+    /* On a host whose /dev has no such directory, nothing was mounted. */
+    if(fstatat(dev_fd, name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+            !S_ISDIR(st.st_mode))
+    {
+        rval = 0;
+        goto cleanup_and_exit;
+    }
+
+    /*
+     * An unmount below a shared mount is carried out below every other
+     * mount of the same peer group as well, and the peers of a bind of /dev
+     * include the host's /dev. The bind may be somebody else's and shared,
+     * see bbox_mount_dev_special(), so it is made private first.
+     */
+    snprintf(dev_path, sizeof(dev_path), "/proc/self/fd/%d", dev_fd);
+
+    if(bbox_raise_privileges() == -1)
+        goto cleanup_and_exit;
+
+    if(mount(NULL, dev_path, NULL, MS_PRIVATE, NULL) == 0) {
+        is_private = 1;
+    } else {
+        bbox_perror("umount", "failed to make mountpoint %s private: %s.\n",
+                dev, strerror(errno));
+    }
+
+    if(bbox_lower_privileges() == -1 || !is_private)
+        goto cleanup_and_exit;
+
+    rval = bbox_umount_at(dev, dev_fd, name);
+
+cleanup_and_exit:
+
+    if(dev_fd != -1)
+        close(dev_fd);
+    close(lock_fd);
+    free(dev);
     return rval;
 }
 
@@ -237,6 +326,10 @@ int bbox_umount_any(const bbox_conf_t *conf, const char *sys_root)
         return -1;
 
     if(!bbox_config_get_mount_dev(conf)) {
+        if(bbox_umount_dev_special(sys_root, "pts") < 0)
+            return -1;
+        if(bbox_umount_dev_special(sys_root, "shm") < 0)
+            return -1;
         if(bbox_umount_unbind(sys_root, "", "dev") < 0)
             return -1;
     }

@@ -55,6 +55,8 @@ void bbox_mount_usage()
         "  -m, --mount <fstype>  Mount 'dev', 'proc', 'sys' or 'home'. If this    \n"
         "                        option is not specified then the default is to   \n"
         "                        mount all of them.                               \n"
+        "                        'dev' comes with a /dev/shm and a /dev/pts of    \n"
+        "                        the target's own.                                \n"
         "                        'proc' shows only your own processes. On         \n"
         "                        kernels older than 5.8, it shows what the        \n"
         "                        host's /proc shows.                              \n"
@@ -555,6 +557,156 @@ cleanup_and_exit:
     return rval;
 }
 
+/*
+ * Mount a filesystem of the target's own on <name> below the sysroot's dev:
+ * a tmpfs for dev/shm, a devpts for dev/pts.
+ *
+ * The bind of /dev is not recursive, so what the host has mounted below
+ * /dev is left out and the target sees the empty directories underneath.
+ * Without a tmpfs on dev/shm, an ordinary user has no shm_open() and no
+ * sem_open(), and without a devpts nobody gets a pseudo-terminal. The
+ * target gets new instances and not the host's: its sessions see neither
+ * the shared memory objects nor the terminals of the host. The ptmx device
+ * node in the bound /dev needs no help to find the new devpts, the kernel
+ * looks for one on the pts directory next to the node.
+ *
+ * The mount point is not the caller's directory, it is in the host's /dev,
+ * and bbox_open_mounted_dev() has the checks that stand in for the owner.
+ * A directory that the host's /dev lacks is left out with a warning,
+ * because creating it would change the host's /dev.
+ */
+int bbox_mount_dev_special(const char *sys_root, const char *name,
+        const char *filesystemtype)
+{
+    char *dev = NULL;
+    char *target = NULL;
+    size_t dev_len = 0;
+    size_t target_len = 0;
+    char dev_path[64];
+    char fd_path[64];
+    unsigned long flags = 0;
+    const char *data = NULL;
+    long dev_mount_id = -1;
+    long dir_mount_id = -1;
+    int lock_fd = -1;
+    int dev_fd = -1;
+    int dir_fd = -1;
+    int rval = -1;
+
+    if(strcmp(filesystemtype, "tmpfs") == 0) {
+        flags = MS_NOSUID | MS_NODEV;
+        data = "mode=1777";
+    } else if(strcmp(filesystemtype, "devpts") == 0) {
+        /*
+         * Kernels before 4.7 have one devpts for the whole system unless a
+         * new instance is asked for. Later ones ignore the option. The
+         * mode is that of the ptmx node inside the instance, which is what
+         * a /dev/ptmx that is a symlink to pts/ptmx leads to.
+         */
+        flags = MS_NOSUID | MS_NOEXEC;
+        data = "newinstance,ptmxmode=0666,mode=600";
+    } else {
+        bbox_perror("mount", "unsupported special filesystem: %s\n",
+            filesystemtype);
+        return -1;
+    }
+
+    if(bbox_validate_entry_name("mount", name) == -1)
+        return -1;
+
+    /* Serialize with other invocations on this sysroot, see bbox_lock_dir. */
+    if((lock_fd = bbox_lock_dir("mount", sys_root)) == -1)
+        return -1;
+
+    bbox_path_join(&dev, sys_root, "dev", &dev_len);
+    bbox_path_join(&target, dev, name, &target_len);
+
+    switch(bbox_open_mounted_dev("mount", sys_root, &dev_fd)) {
+        case 1:
+            bbox_perror("mount", "there is no mount of /dev on '%s'.\n",
+                    dev);
+            goto cleanup_and_exit;
+        case -1:
+            goto cleanup_and_exit;
+        default:
+            break;
+    }
+
+    dir_fd = openat(dev_fd, name, O_PATH | O_DIRECTORY | O_NOFOLLOW);
+
+    if(dir_fd == -1) {
+        if(errno == ENOENT || errno == ENOTDIR || errno == ELOOP) {
+            bbox_pwarning("mount", "the host has no directory /dev/%s, "
+                    "nothing is mounted on '%s'.\n", name, target);
+            rval = 0;
+        } else {
+            bbox_perror("mount", "could not open '%s': %s.\n", target,
+                    strerror(errno));
+        }
+        goto cleanup_and_exit;
+    }
+
+    if((dev_mount_id = bbox_fd_mount_id("mount", dev_fd)) == -1)
+        goto cleanup_and_exit;
+    if((dir_mount_id = bbox_fd_mount_id("mount", dir_fd)) == -1)
+        goto cleanup_and_exit;
+
+    /* Something is mounted there already. */
+    if(dev_mount_id != dir_mount_id) {
+        rval = 0;
+        goto cleanup_and_exit;
+    }
+
+    snprintf(dev_path, sizeof(dev_path), "/proc/self/fd/%d", dev_fd);
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dir_fd);
+
+    /*
+     * We need to be running mount as root, so we briefly raise privileges to
+     * drop them again immediately after.
+     */
+    if(bbox_raise_privileges() == -1)
+        goto cleanup_and_exit;
+
+    /*
+     * A mount below a shared mount shows up below every other mount of the
+     * same peer group, and the peers of a bind of /dev include the host's
+     * /dev. The bind that bbox_mount_bind() makes is private, but the one
+     * found here may be somebody else's, so it is made private before
+     * anything is mounted below it.
+     */
+    if(mount(NULL, dev_path, NULL, MS_PRIVATE, NULL) != 0)
+    {
+        bbox_perror("mount", "failed to make mountpoint %s private: %s.\n",
+                dev, strerror(errno));
+    }
+    else if(mount(filesystemtype, fd_path, filesystemtype, flags, data) != 0)
+    {
+        bbox_perror("mount", "failed to mount %s on %s: %s.\n",
+                filesystemtype, target, strerror(errno));
+    }
+    else if(bbox_mount_finish(target, dev_fd, name, dir_fd, 0) == 0)
+    {
+        rval = 0;
+    }
+
+    /*
+     * We're done with mounting, lower privileges right away.
+     */
+    if(bbox_lower_privileges() == -1)
+        rval = -1;
+
+cleanup_and_exit:
+
+    if(dir_fd != -1)
+        close(dir_fd);
+    if(dev_fd != -1)
+        close(dev_fd);
+    close(lock_fd);
+    free(target);
+    free(dev);
+    return rval;
+}
+
 int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
 {
     /*
@@ -567,6 +719,10 @@ int bbox_mount_any(const bbox_conf_t *conf, const char *sys_root)
     if(bbox_config_get_mount_dev(conf)) {
         if(bbox_mount_bind(sys_root, "/dev", "", "dev", 0,
                     MS_NOSUID | MS_NOEXEC) < 0)
+            return -1;
+        if(bbox_mount_dev_special(sys_root, "shm", "tmpfs") < 0)
+            return -1;
+        if(bbox_mount_dev_special(sys_root, "pts", "devpts") < 0)
             return -1;
     }
 

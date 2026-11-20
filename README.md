@@ -19,9 +19,11 @@ Type `build-box <command> --help` for the options of each command.
 Each user's targets live below `/var/lib/build-box/users/<uid>/targets`.
 Entering a target needs a few mounts: `dev`, `proc` and `sys`, and the
 user's real home on `/home/<user>/RealHome`, next to a home of the target's
-own. These are made by `build-box-do`, a small setuid root helper. It only
-works for members of the group `build-box`, never for root, and only on the
-caller's own targets.
+own. `dev` is the host's `/dev`, with a `/dev/shm` and a `/dev/pts` that
+belong to the target: its sessions see neither the shared memory objects nor
+the terminals of the host. The mounts are made by `build-box-do`, a small
+setuid root helper. It only works for members of the group `build-box`,
+never for root, and only on the caller's own targets.
 
 ## Requirements
 

@@ -113,6 +113,8 @@ int bbox_open_dir_owned_by(const char *module, const char *dir, uid_t uid);
 int bbox_lock_dir(const char *module, const char *dir);
 long bbox_fd_mount_id(const char *module, int fd);
 int bbox_is_mount_point_at(const char *module, int dir_fd, const char *name);
+int bbox_open_mounted_dev(const char *module, const char *sys_root,
+        int *dev_fd_ptr);
 int bbox_validate_entry_name(const char *module, const char *name);
 int bbox_mkdir_p(const char *module, const char *path);
 int bbox_sysroot_mkdir_p(const char *module, const char *sysroot,
@@ -133,8 +135,11 @@ int bbox_mount_bind(const char *sys_root, const char *source,
         unsigned long remount_flags);
 int bbox_mount_special(const char *sys_root, const char *parent_relpath,
         const char *name, const char *filesystemtype);
+int bbox_mount_dev_special(const char *sys_root, const char *name,
+        const char *filesystemtype);
 int bbox_umount_unbind(const char *sys_root, const char *parent_relpath,
         const char *name);
+int bbox_umount_dev_special(const char *sys_root, const char *name);
 
 /* Setup */
 

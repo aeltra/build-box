@@ -1053,6 +1053,89 @@ cleanup_and_exit:
 }
 
 /*
+ * Open the sysroot's dev directory, provided that it has /dev bound on it.
+ *
+ * The mounts below dev are the only ones whose parent is not the caller's
+ * directory: it is the host's /dev. What vouches for the parent in the
+ * place of its owner is what it is. The entry is opened by its name,
+ * relative to the verified sysroot and without following a symlink. It
+ * must have a mount on it, and that mount must show the same directory as
+ * /dev without being the host's own mount of it. Nothing below such a
+ * mount is the caller's to rearrange. A symlink to /dev in the place of
+ * dev, which would lead a mount or an unmount to the host's /dev/shm and
+ * /dev/pts, is not opened in the first place.
+ *
+ * Returns 0 and the descriptor, 1 if there is no such mount on dev, and -1
+ * on error.
+ */
+int bbox_open_mounted_dev(const char *module, const char *sys_root,
+        int *dev_fd_ptr)
+{
+    struct stat dev_st;
+    struct stat host_st;
+    long sysroot_mount_id = -1;
+    long dev_mount_id = -1;
+    long host_mount_id = -1;
+    int sysroot_fd = -1;
+    int dev_fd = -1;
+    int host_fd = -1;
+    int rval = -1;
+
+    if((sysroot_fd = bbox_open_dir_owned_by(module, sys_root, getuid())) == -1)
+        return -1;
+
+    dev_fd = openat(sysroot_fd, "dev", O_PATH | O_DIRECTORY | O_NOFOLLOW);
+
+    if(dev_fd == -1) {
+        if(errno == ENOENT || errno == ENOTDIR || errno == ELOOP) {
+            rval = 1;
+        } else {
+            bbox_perror(module, "could not open '%s/dev': %s.\n", sys_root,
+                    strerror(errno));
+        }
+        goto cleanup_and_exit;
+    }
+
+    if((host_fd = open("/dev", O_PATH | O_DIRECTORY)) == -1) {
+        bbox_perror(module, "could not open '/dev': %s.\n", strerror(errno));
+        goto cleanup_and_exit;
+    }
+
+    if(fstat(dev_fd, &dev_st) == -1 || fstat(host_fd, &host_st) == -1) {
+        bbox_perror(module, "could not stat '%s/dev' and '/dev': %s.\n",
+                sys_root, strerror(errno));
+        goto cleanup_and_exit;
+    }
+
+    if((sysroot_mount_id = bbox_fd_mount_id(module, sysroot_fd)) == -1)
+        goto cleanup_and_exit;
+    if((dev_mount_id = bbox_fd_mount_id(module, dev_fd)) == -1)
+        goto cleanup_and_exit;
+    if((host_mount_id = bbox_fd_mount_id(module, host_fd)) == -1)
+        goto cleanup_and_exit;
+
+    if(dev_mount_id == sysroot_mount_id || dev_mount_id == host_mount_id ||
+            dev_st.st_dev != host_st.st_dev || dev_st.st_ino != host_st.st_ino)
+    {
+        rval = 1;
+        goto cleanup_and_exit;
+    }
+
+    *dev_fd_ptr = dev_fd;
+    dev_fd = -1;
+    rval = 0;
+
+cleanup_and_exit:
+
+    if(host_fd != -1)
+        close(host_fd);
+    if(dev_fd != -1)
+        close(dev_fd);
+    close(sysroot_fd);
+    return rval;
+}
+
+/*
  * mkdir -p, done here rather than by spawning mkdir(1): a setuid binary has
  * no business searching the caller's PATH for a helper, and a minimal
  * chroot has no mkdir to find. Returns -1 with errno set and no message,
